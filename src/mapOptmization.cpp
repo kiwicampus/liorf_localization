@@ -283,6 +283,7 @@ public:
                   << initialize_pose[0] << "\n" << initialize_pose[1] << "\n" << initialize_pose[2] << std::endl;
 
         has_initialize_pose = true;
+        system_initialized = false;
     }
 
     void laserCloudInfoHandler(const liorf_localization::msg::CloudInfo::SharedPtr msgIn)
