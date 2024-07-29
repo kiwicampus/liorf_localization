@@ -155,6 +155,11 @@ public:
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
 
+    float mappingGpsDatumLatitude;
+    float mappingGpsDatumLongitude;
+    float mappingGpsDatumAltitude;
+    float mappingGpsCloudTimeOffset;
+
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
         declare_parameter<string>("history_policy", "history_keep_last");
@@ -317,6 +322,15 @@ public:
         declare_parameter<float>("globalMapVisualizationLeafSize", 1.0f);
         get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
 
+        declare_parameter<float>("mappingGpsDatumLatitude", 0.0f);
+        get_parameter("mappingGpsDatumLatitude", mappingGpsDatumLatitude);
+        declare_parameter<float>("mappingGpsDatumLongitude", 0.0f);
+        get_parameter("mappingGpsDatumLongitude", mappingGpsDatumLongitude);
+        declare_parameter<float>("mappingGpsDatumAltitude", 0.0f);
+        get_parameter("mappingGpsDatumAltitude", mappingGpsDatumAltitude);
+        declare_parameter<float>("mappingGpsCloudTimeOffset", 0.0f);
+        get_parameter("mappingGpsCloudTimeOffset", mappingGpsCloudTimeOffset);
+
         usleep(100);
     }
 
@@ -367,6 +381,30 @@ sensor_msgs::msg::PointCloud2 publishCloud(const rclcpp::Publisher<sensor_msgs::
         thisPub->publish(tempCloud);
 
     return tempCloud;
+}
+
+template<typename T>
+struct always_false : std::false_type {};
+
+template<typename T>
+void publishPoseWithCovariance(const rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr &thisPub, const T& thisPose, rclcpp::Time thisStamp, std::string thisFrame)
+{
+    geometry_msgs::msg::PoseWithCovarianceStamped tempPose;
+
+    if constexpr (std::is_same<T, geometry_msgs::msg::Pose>::value) {
+        tempPose.pose.pose = thisPose;
+    } else if constexpr (std::is_same<T, geometry_msgs::msg::PoseWithCovariance>::value) {
+        tempPose.pose = thisPose;
+    } else {
+        static_assert(always_false<T>::value, "Unsupported type for thisPose. Must be Pose or PoseWithCovariance.");
+    }
+
+    tempPose.header.stamp = thisStamp;
+    tempPose.header.frame_id = thisFrame;
+
+    if (thisPub->get_subscription_count() != 0)
+        thisPub->publish(tempPose);
+
 }
 
 template<typename T>

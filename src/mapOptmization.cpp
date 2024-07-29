@@ -17,6 +17,9 @@
 
 #include <gtsam/nonlinear/ISAM2.h>
 
+#include <GeographicLib/Geocentric.hpp>
+#include <GeographicLib/LocalCartesian.hpp>
+
 using namespace gtsam;
 
 using symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
@@ -60,7 +63,7 @@ public:
     Eigen::MatrixXd poseCovariance;
 
     rclcpp::Subscription<liorf_localization::msg::CloudInfo>::SharedPtr subCloud;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subGPS;
+    rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr subGPS;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr subLoop;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr sub_initial_pose;
 
@@ -77,6 +80,9 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudRegisteredRaw;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
     rclcpp::Publisher<liorf_localization::msg::CloudInfo>::SharedPtr pubSLAMInfo;
+
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubMapPose;
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGpsPose;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
 
@@ -141,6 +147,8 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
+    GeographicLib::LocalCartesian gps_trans_;
+
     // add by yjz_lucky_boy
     // localization
     bool has_global_map = false;
@@ -159,7 +167,7 @@ public:
 
         subCloud = create_subscription<liorf_localization::msg::CloudInfo>("liorf_localization/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
-        subGPS = create_subscription<nav_msgs::msg::Odometry>(gpsTopic, QosPolicy(history_policy, reliability_policy),
+        subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
         subLoop = create_subscription<std_msgs::msg::Float64MultiArray>("lio_loop/loop_closure_detection", QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::loopInfoHandler, this, std::placeholders::_1));
@@ -179,6 +187,10 @@ public:
         pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
         pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", QosPolicy(history_policy, reliability_policy));
         pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>("liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
+        
+        pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
+        pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
+
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
@@ -381,9 +393,40 @@ public:
         }
     }
 
-    void gpsHandler(const nav_msgs::msg::Odometry::SharedPtr gpsMsg)
+    void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
     {
-        gpsQueue.push_back(*gpsMsg);
+        if (gpsMsg->status.status != 0 && gpsMsg->status.status != 2)
+            return;
+
+        Eigen::Vector3d trans_local_;
+        static bool first_gps = false;
+        if (!first_gps) {
+            first_gps = true;
+            if(mappingGpsDatumLatitude != 0.0 || mappingGpsDatumLongitude != 0)
+            {
+                gps_trans_.Reset(mappingGpsDatumLatitude, mappingGpsDatumLongitude, mappingGpsDatumAltitude);
+                std::cout << "First pose saved from Datum: latitude " << mappingGpsDatumLatitude << ", longitude: " << mappingGpsDatumLongitude << std::endl;
+            }
+            else
+            {
+                std::cout << "First pose saved from GPS: latitude " << gpsMsg->latitude << ", longitude: " << gpsMsg->longitude << std::endl;
+                gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
+            }
+        }
+
+        gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
+
+        nav_msgs::msg::Odometry gps_odom;
+        gps_odom.header = gpsMsg->header;
+        gps_odom.header.frame_id = "map";
+        gps_odom.pose.pose.position.x = trans_local_[0];
+        gps_odom.pose.pose.position.y = trans_local_[1];
+        gps_odom.pose.pose.position.z = trans_local_[2];
+        gps_odom.pose.covariance[0] = gpsMsg->position_covariance[0];
+        gps_odom.pose.covariance[7] = gpsMsg->position_covariance[4];
+        gps_odom.pose.covariance[14] = gpsMsg->position_covariance[8];
+        publishPoseWithCovariance(pubGpsPose, gps_odom.pose, timeLaserInfoStamp, mapFrame);
+        gpsQueue.push_back(gps_odom);
     }
 
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
@@ -1448,7 +1491,7 @@ public:
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
                 gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
                 gtSAMgraph.add(gps_factor);
-
+                RCLCPP_INFO(get_logger(), "Added GPS factor");
                 aLoopIsClosed = true;
                 break;
             }
@@ -1627,6 +1670,8 @@ public:
         tf2::convert(quat_tf, quat_msg);
         laserOdometryROS.pose.pose.orientation = quat_msg;
         pubLaserOdometryGlobal->publish(laserOdometryROS);
+        publishPoseWithCovariance(pubMapPose, laserOdometryROS.pose, timeLaserInfoStamp, mapFrame);
+
         
         // Publish TF
         quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
@@ -1698,9 +1743,9 @@ public:
         if (cloudKeyPoses3D->points.empty())
             return;
         // publish key poses
-        publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, odometryFrame);
+        // publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, odometryFrame);
         // Publish surrounding key frames
-        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, odometryFrame);
+        // publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, odometryFrame);
         // publish registered key frame
         if (pubRecentKeyFrame->get_subscription_count() != 0)
         {

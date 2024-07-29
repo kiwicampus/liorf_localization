@@ -31,6 +31,9 @@ find_package(Eigen REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Boost REQUIRED COMPONENTS timer)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
+find_package(GeographicLib REQUIRED)
+
 set(ros2_lib "rclcpp;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs")
 
 rosidl_generate_interfaces(${PROJECT_NAME} 
@@ -48,6 +51,7 @@ include_directories(
 	${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
+  ${GeographicLib_LIBRARIES}
 )
 
 # link directories
@@ -57,6 +61,7 @@ link_directories(
 	${PCL_LIBRARY_DIRS}
   ${OpenCV_LIBRARY_DIRS}
   ${GTSAM_LIBRARY_DIRS}
+  ${GeographicLib_LIBRARIES}
 )
 
 file(GLOB common_lib "lib/*.cpp")
@@ -74,7 +79,7 @@ target_link_libraries(${PROJECT_NAME}_imageProjection "${cpp_typesupport_target}
 add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp ${common_lib})
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
 ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})
