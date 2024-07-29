@@ -2,20 +2,20 @@
   ros__parameters:
     # Topics
     # ubran honkong
-    pointCloudTopic: "/velodyne_points"               # Point cloud data
-    imuTopic: "/imu/data"                         # IMU data # <!-- liorf_localization_yjz_lucky_boy -->
+    pointCloudTopic: "/livox/lidar"               # Point cloud data
+    imuTopic: "/imu/data_livox"                         # IMU data # <!-- liorf_localization_yjz_lucky_boy -->
 
     # # mulran
     # pointCloudTopic: "/os1_points"               # Point cloud data
     # imuTopic: "/imu/data_raw"                         # IMU data # <!-- liorf_localization_yjz_lucky_boy -->
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
-    gpsTopic: "odometry/gpsz"                   # GPS odometry topic from navsat, see module_navsat.launch file
+    gpsTopic: "/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
-    lidarFrame: "base_link"
+    lidarFrame: "laser_link"
     baselinkFrame: "base_link"
-    odometryFrame: "odom"
-    mapFrame: "map"
+    odometryFrame: "liorf_odom"
+    mapFrame: "liorf_map"
 
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"
@@ -25,25 +25,25 @@
     
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
-    savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
+    savePCDDirectory: "/data/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
 
     # Sensor Settings
-    sensor: velodyne                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
-    N_SCAN: 32                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
-    Horizon_SCAN: 1800                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
+    sensor: livox                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
+    N_SCAN: 6                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
+    Horizon_SCAN: 4000                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
     downsampleRate: 1                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
-    point_filter_num: 3                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
-    lidarMinRange: 3.0                          # default: 1.0, minimum lidar range to be used
-    lidarMaxRange: 1000.0                       # default: 1000.0, maximum lidar range to be used
+    point_filter_num: 2                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
+    lidarMinRange: 0.7                          # default: 1.0, minimum lidar range to be used
+    lidarMaxRange: 100.0                       # default: 1000.0, maximum lidar range to be used
 
     # IMU Settings
     imuType: 1                                  # 0: 6-axis  1: 9-axis
-    imuRate: 100.0
+    imuRate: 200.0
     # hongkong ubran
-    imuAccNoise: 8.1330537434371481e-03
-    imuGyrNoise: 7.4266825125507141e-03
-    imuAccBiasN: 1.2123362494392119e-04
-    imuGyrBiasN: 8.6572985145653080e-05
+    imuAccNoise: 3.9939570888238808e-03
+    imuGyrNoise: 1.5636343949698187e-03
+    imuAccBiasN: 6.4356659353532566e-04
+    imuGyrBiasN: 3.5640318696367613e-04
 
     # # # MULRAN Datasets
     # imuAccNoise: 0.009939570888238808e-03
@@ -56,7 +56,7 @@
     
     # # hongkong ubran
     # Extrinsics: T_lb (lidar -> imu)
-    extrinsicTrans: [0.0, 0.0, 0.0]
+    extrinsicTrans: [0.011, 0.023, -0.044]
     extrinsicRot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
@@ -79,7 +79,7 @@
     #                 0, 0, 1]
 
     # voxel filter paprams
-    mappingSurfLeafSize: 0.4                      # default: 0.4 - outdoor, 0.2 - indoor
+    mappingSurfLeafSize: 0.15                       # default: 0.4 - outdoor, 0.2 - indoor
 
     # robot motion constraint (in case you are using a 2D robot)
     z_tollerance: 1000.0                            # meters
@@ -87,14 +87,14 @@
 
     # CPU Params
     numberOfCores: 8                              # number of cores for mapping optimization
-    mappingProcessInterval: 0.0                  # seconds, regulate mapping frequency
+    mappingProcessInterval: 0.15                  # seconds, regulate mapping frequency
 
     # Surrounding map
     surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
     surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
     surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
     surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
-    surroundingKeyframeMapLeafSize: 0.3           # downsample local map point cloud
+    surroundingKeyframeMapLeafSize: 0.4           # downsample local map point cloud
 
     # Loop closure
     loopClosureEnableFlag: true

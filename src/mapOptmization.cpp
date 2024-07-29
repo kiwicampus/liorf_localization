@@ -230,7 +230,7 @@ public:
     // add by yjz_lucky_boy
     void loadGlobalMap()
     {
-        std::string global_map = std::getenv("HOME") + savePCDDirectory;
+        std::string global_map = savePCDDirectory;
         pcl::io::loadPCDFile<PointType>(global_map + "GlobalMap.pcd", *laserCloudSurfFromMap);
         downSizeFilterLocalMapSurf.setInputCloud(laserCloudSurfFromMap);
         downSizeFilterLocalMapSurf.filter(*laserCloudSurfFromMapDS);

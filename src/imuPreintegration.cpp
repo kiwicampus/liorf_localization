@@ -376,6 +376,7 @@ public:
             if (imuTime < currentCorrectionTime - delta_t)
             {
                 double dt = (lastImuT_opt < 0) ? (1.0 / imuRate) : (imuTime - lastImuT_opt);
+                dt = dt >= 1.0 / imuRate ? dt : 1.0 / imuRate;
                 imuIntegratorOpt_->integrateMeasurement(
                         gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
                         gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
@@ -443,7 +444,7 @@ public:
                 sensor_msgs::msg::Imu *thisImu = &imuQueImu[i];
                 double imuTime = ROS_TIME(thisImu->header.stamp);
                 double dt = (lastImuQT < 0) ? (1.0 / imuRate) :(imuTime - lastImuQT);
-
+                dt = dt >= 1.0 / imuRate ? dt : 1.0 / imuRate;
                 imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
                                                         gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
                 lastImuQT = imuTime;
@@ -488,6 +489,7 @@ public:
 
         double imuTime = ROS_TIME((&thisImu)->header.stamp);
         double dt = (lastImuT_imu < 0) ? (1.0 / imuRate) : (imuTime - lastImuT_imu);
+        dt = dt >= 1.0 / imuRate ? dt : 1.0 / imuRate;
         lastImuT_imu = imuTime;
 
         // integrate this single imu message

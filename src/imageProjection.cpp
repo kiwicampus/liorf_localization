@@ -25,17 +25,30 @@ struct OusterPointXYZIRT {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;
 POINT_CLOUD_REGISTER_POINT_STRUCT(OusterPointXYZIRT,
-    (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-    (uint32_t, t, t) (uint16_t, reflectivity, reflectivity)
-    (uint8_t, ring, ring) (uint16_t, noise, noise) (uint32_t, range, range)
-)
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(uint32_t, t, t)(
+                                      uint16_t, reflectivity, reflectivity)(uint8_t, ring, ring)(uint16_t, noise,
+                                                                                                 noise)(uint32_t, range,
+                                                                                                        range))
+
+struct LivoxPointXYZIRT
+{
+    PCL_ADD_POINT4D;
+    float intensity;
+    uint8_t tag;
+    uint8_t line;
+    double timestamp;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+POINT_CLOUD_REGISTER_POINT_STRUCT(LivoxPointXYZIRT,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(
+                                      uint8_t, tag, tag)(uint8_t, line, line)(double, timestamp, timestamp))
 
 struct MulranPointXYZIRT { 
-     PCL_ADD_POINT4D;
-     float intensity;
-     uint32_t t;
-     int ring;
-     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    PCL_ADD_POINT4D;
+    float intensity;
+    uint32_t t;
+    int ring;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
  }EIGEN_ALIGN16;
  POINT_CLOUD_REGISTER_POINT_STRUCT (MulranPointXYZIRT,
      (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
@@ -50,7 +63,7 @@ struct RobosensePointXYZIRT
     double timestamp;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;
-POINT_CLOUD_REGISTER_POINT_STRUCT(RobosensePointXYZIRT, 
+POINT_CLOUD_REGISTER_POINT_STRUCT(RobosensePointXYZIRT,
       (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)
       (uint16_t, ring, ring)(double, timestamp, timestamp)
 )
@@ -62,7 +75,7 @@ const int queueLength = 2000;
 
 class ImageProjection : public ParamServer
 {
-private:
+   private:
 
     std::mutex imuLock;
     std::mutex odoLock;
@@ -91,7 +104,8 @@ private:
 
     pcl::PointCloud<PointXYZIRT>::Ptr laserCloudIn;
     pcl::PointCloud<OusterPointXYZIRT>::Ptr tmpOusterCloudIn;
-    pcl::PointCloud<PointType>::Ptr   fullCloud;
+    pcl::PointCloud<LivoxPointXYZIRT>::Ptr tmpLivoxCloudIn;
+    pcl::PointCloud<PointType>::Ptr fullCloud;
     pcl::PointCloud<MulranPointXYZIRT>::Ptr tmpMulranCloudIn;
 
     int deskewFlag;
@@ -106,18 +120,18 @@ private:
     double timeScanEnd;
     std_msgs::msg::Header cloudHeader;
 
-public:
+   public:
     ImageProjection(const rclcpp::NodeOptions & options) :
             ParamServer("liorf_localization_imageProjection", options), deskewFlag(0)
     {
         subImu = create_subscription<sensor_msgs::msg::Imu>(imuTopic, QosPolicy(history_policy, reliability_policy), 
-                    std::bind(&ImageProjection::imuHandler, this, std::placeholders::_1));
+            std::bind(&ImageProjection::imuHandler, this, std::placeholders::_1));
 
         subOdom = create_subscription<nav_msgs::msg::Odometry>(odomTopic+"_incremental", QosPolicy(history_policy, reliability_policy),
-                    std::bind(&ImageProjection::odometryHandler, this, std::placeholders::_1));
+            std::bind(&ImageProjection::odometryHandler, this, std::placeholders::_1));
 
         subLaserCloud = create_subscription<sensor_msgs::msg::PointCloud2>(pointCloudTopic, QosPolicy(history_policy, reliability_policy), 
-                    std::bind(&ImageProjection::cloudHandler, this, std::placeholders::_1));
+            std::bind(&ImageProjection::cloudHandler, this, std::placeholders::_1));
 
         pubExtractedCloud = create_publisher<sensor_msgs::msg::PointCloud2>( "liorf_localization/deskew/cloud_deskewed", QosPolicy(history_policy, reliability_policy));
 
@@ -133,6 +147,7 @@ public:
     {
         laserCloudIn.reset(new pcl::PointCloud<PointXYZIRT>());
         tmpOusterCloudIn.reset(new pcl::PointCloud<OusterPointXYZIRT>());
+        tmpLivoxCloudIn.reset(new pcl::PointCloud<LivoxPointXYZIRT>());
         tmpMulranCloudIn.reset(new pcl::PointCloud<MulranPointXYZIRT>());
         fullCloud.reset(new pcl::PointCloud<PointType>());
 
@@ -170,12 +185,12 @@ public:
         // debug IMU data
         // cout << std::setprecision(6);
         // cout << "IMU acc: " << endl;
-        // cout << "x: " << thisImu.linear_acceleration.x << 
-        //       ", y: " << thisImu.linear_acceleration.y << 
+        // cout << "x: " << thisImu.linear_acceleration.x <<
+        //       ", y: " << thisImu.linear_acceleration.y <<
         //       ", z: " << thisImu.linear_acceleration.z << endl;
         // cout << "IMU gyro: " << endl;
-        // cout << "x: " << thisImu.angular_velocity.x << 
-        //       ", y: " << thisImu.angular_velocity.y << 
+        // cout << "x: " << thisImu.angular_velocity.x <<
+        //       ", y: " << thisImu.angular_velocity.y <<
         //       ", z: " << thisImu.angular_velocity.z << endl;
         // double imuRoll, imuPitch, imuYaw;
         // tf::Quaternion orientation;
@@ -216,9 +231,30 @@ public:
         // convert cloud
         currentCloudMsg = std::move(cloudQueue.front());
         cloudQueue.pop_front();
-        if (sensor == SensorType::VELODYNE || sensor == SensorType::LIVOX)
+        if (sensor == SensorType::VELODYNE)
         {
             pcl::moveFromROSMsg(currentCloudMsg, *laserCloudIn);
+        }
+        else if (sensor == SensorType::LIVOX)
+        {
+            // Convert to Velodyne format
+            pcl::moveFromROSMsg(currentCloudMsg, *tmpLivoxCloudIn);
+            laserCloudIn->points.resize(tmpLivoxCloudIn->size());
+            laserCloudIn->is_dense = tmpLivoxCloudIn->is_dense;
+            double start_stamptime = tmpLivoxCloudIn->points[0].timestamp;
+            for (size_t i = 0; i < tmpLivoxCloudIn->size(); i++)
+            {
+                auto& src = tmpLivoxCloudIn->points[i];
+                auto& dst = laserCloudIn->points[i];
+                dst.x = src.x;
+                dst.y = src.y;
+                dst.z = src.z;
+                dst.intensity = src.intensity;
+                dst.ring = src.line;
+                dst.time = static_cast<float>((src.timestamp - start_stamptime) / 1000000000.0);
+                // std::cout << std::setprecision (100) << dst.time << " " << src.timestamp  <<std::endl;
+            }
+            // publishCloud(pubExtractedCloud, laserCloudIn, currentCloudMsg.header.stamp, lidarFrame);
         }
         else if (sensor == SensorType::OUSTER)
         {
@@ -295,7 +331,7 @@ public:
             ringFlag = -1;
             for (int i = 0; i < (int)currentCloudMsg.fields.size(); ++i)
             {
-                if (currentCloudMsg.fields[i].name == "ring")
+                if (currentCloudMsg.fields[i].name == "ring" || currentCloudMsg.fields[i].name == "line")
                 {
                     ringFlag = 1;
                     break;
@@ -312,9 +348,9 @@ public:
         if (deskewFlag == 0)
         {
             deskewFlag = -1;
-            for (auto &field : currentCloudMsg.fields)
+            for (auto& field : currentCloudMsg.fields)
             {
-                if (field.name == "time" || field.name == "t")
+                if (field.name == "time" || field.name == "t" || field.name == "timestamp")
                 {
                     deskewFlag = 1;
                     break;
@@ -595,7 +631,7 @@ public:
             fullCloud->push_back(thisPoint);
         }
     }
-    
+
     void publishClouds()
     {
         cloudInfo.header = cloudHeader;
