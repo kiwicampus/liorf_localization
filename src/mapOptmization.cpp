@@ -1,4 +1,5 @@
 #include "utility.h"
+#include "nanoflann_pcl.h"
 #include "liorf_localization/msg/cloud_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
 #include <gtsam/geometry/Rot3.h>
@@ -103,10 +104,10 @@ public:
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
 
-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurfFromMap;
+    nanoflann::KdTreeFLANN<PointType> kdtreeSurfFromMap;
 
-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurroundingKeyPoses;
-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeHistoryKeyPoses;
+    nanoflann::KdTreeFLANN<PointType> kdtreeSurroundingKeyPoses;
+    nanoflann::KdTreeFLANN<PointType> kdtreeHistoryKeyPoses;
 
     pcl::VoxelGrid<PointType> downSizeFilterSurf;
     pcl::VoxelGrid<PointType> downSizeFilterLocalMapSurf;
@@ -200,8 +201,8 @@ public:
         copy_cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
         copy_cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
 
-        kdtreeSurroundingKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
-        kdtreeHistoryKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
+        // kdtreeSurroundingKeyPoses.reset(new nanoflann::KdTreeFLANN<PointType>());
+        // kdtreeHistoryKeyPoses.reset(new nanoflann::KdTreeFLANN<PointType>());
 
         laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); // surf feature set from odoOptimization
         laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); // downsampled surf featuer set from odoOptimization
@@ -218,7 +219,7 @@ public:
         laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
         laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
 
-        kdtreeSurfFromMap.reset(new pcl::KdTreeFLANN<PointType>());
+        // kdtreeSurfFromMap.reset(new nanoflann::KdTreeFLANN<PointType>());
 
         for (int i = 0; i < 6; ++i){
             transformTobeMapped[i] = 0;
@@ -242,7 +243,7 @@ public:
         
         has_global_map = true;
 
-        kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
+        kdtreeSurfFromMap.setInputCloud(laserCloudSurfFromMapDS);
 
         sleep(3);
         publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);   
@@ -275,6 +276,7 @@ public:
     void laserCloudInfoHandler(const liorf_localization::msg::CloudInfo::SharedPtr msgIn)
     {
         // extract time stamp
+        auto start = std::chrono::high_resolution_clock::now();
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = ROS_TIME(msgIn->header.stamp);
 
@@ -308,7 +310,14 @@ public:
             publishOdometry();
 
             publishFrames();
+            // End time measurement
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+
+            // Log the elapsed time
+            RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
         }
+
     }
 
     bool systemInitialize()
@@ -537,7 +546,7 @@ public:
         if (cloudKeyPoses3D->points.empty() == true)
             return;
 
-        pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
+        nanoflann::KdTreeFLANN<PointType> kdtreeGlobalMap;
         pcl::PointCloud<PointType>::Ptr globalMapKeyPoses(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
@@ -548,8 +557,8 @@ public:
         std::vector<float> pointSearchSqDisGlobalMap;
         // search near key frames to visualize
         mtx.lock();
-        kdtreeGlobalMap->setInputCloud(cloudKeyPoses3D);
-        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
+        kdtreeGlobalMap.setInputCloud(cloudKeyPoses3D);
+        kdtreeGlobalMap.radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
         mtx.unlock();
 
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
@@ -561,7 +570,7 @@ public:
         downSizeFilterGlobalMapKeyPoses.filter(*globalMapKeyPosesDS);
         for(auto& pt : globalMapKeyPosesDS->points)
         {
-            kdtreeGlobalMap->nearestKSearch(pt, 1, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
+            kdtreeGlobalMap.nearestKSearch(pt, 1, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
             pt.intensity = cloudKeyPoses3D->points[pointSearchIndGlobalMap[0]].intensity;
         }
 
@@ -711,8 +720,8 @@ public:
         // find the closest history key frame
         std::vector<int> pointSearchIndLoop;
         std::vector<float> pointSearchSqDisLoop;
-        kdtreeHistoryKeyPoses->setInputCloud(copy_cloudKeyPoses3D);
-        kdtreeHistoryKeyPoses->radiusSearch(copy_cloudKeyPoses3D->back(), historyKeyframeSearchRadius, pointSearchIndLoop, pointSearchSqDisLoop, 0);
+        kdtreeHistoryKeyPoses.setInputCloud(copy_cloudKeyPoses3D);
+        kdtreeHistoryKeyPoses.radiusSearch(copy_cloudKeyPoses3D->back(), historyKeyframeSearchRadius, pointSearchIndLoop, pointSearchSqDisLoop);
         
         for (int i = 0; i < (int)pointSearchIndLoop.size(); ++i)
         {
@@ -947,8 +956,8 @@ public:
         std::vector<float> pointSearchSqDis;
 
         // extract all the nearby key poses and downsample them
-        kdtreeSurroundingKeyPoses->setInputCloud(cloudKeyPoses3D); // create kd-tree
-        kdtreeSurroundingKeyPoses->radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius, pointSearchInd, pointSearchSqDis);
+        kdtreeSurroundingKeyPoses.setInputCloud(cloudKeyPoses3D); // create kd-tree
+        kdtreeSurroundingKeyPoses.radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius, pointSearchInd, pointSearchSqDis);
         for (int i = 0; i < (int)pointSearchInd.size(); ++i)
         {
             int id = pointSearchInd[i];
@@ -959,7 +968,7 @@ public:
         downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
         for(auto& pt : surroundingKeyPosesDS->points)
         {
-            kdtreeSurroundingKeyPoses->nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
+            kdtreeSurroundingKeyPoses.nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
             pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
         }
 
@@ -1051,7 +1060,7 @@ public:
 
             pointOri = laserCloudSurfLastDS->points[i];
             pointAssociateToMap(&pointOri, &pointSel); 
-            kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+            kdtreeSurfFromMap.nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
 
             Eigen::Matrix<float, 5, 3> matA0;
             Eigen::Matrix<float, 5, 1> matB0;
@@ -1478,7 +1487,7 @@ public:
         addGPSFactor();
 
         // loop factor
-        addLoopFactor();
+        // addLoopFactor();
 
         // cout << "****************************************************" << endl;
         // gtSAMgraph.print("GTSAM Graph:\n");

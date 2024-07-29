@@ -36,13 +36,13 @@ def generate_launch_description():
                 parameters=[parameter_file],
                 output='screen'
             ),
-            Node(
-                package="liorf_localization",
-                executable="liorf_localization_imuPreintegration",
-                name="liorf_localization_imuPreintegration",
-                parameters=[parameter_file],
-                output="screen",
-            ),
+            # Node(
+            #     package="liorf_localization",
+            #     executable="liorf_localization_imuPreintegration",
+            #     name="liorf_localization_imuPreintegration",
+            #     parameters=[parameter_file],
+            #     output="screen",
+            # ),
             Node(
                 package="liorf_localization",
                 executable="liorf_localization_imageProjection",
@@ -55,6 +55,7 @@ def generate_launch_description():
                 executable="liorf_localization_mapOptmization",
                 name="liorf_localization_mapOptmization",
                 parameters=[parameter_file],
+                # prefix=["valgrind --tool=callgrind --instr-atstart=no"],
                 output="screen",
             ),
             Node(

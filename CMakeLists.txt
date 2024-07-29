@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(liorf_localization)
 
-set(CMAKE_BUILD_TYPE "Release")
+# set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -pthread")
 
 include(cmake/rosidl_get_typesupport_target.cmake)
 
