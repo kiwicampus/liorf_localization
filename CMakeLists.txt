@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.5)
 project(liorf_localization)
+enable_language(CUDA)
 
 # set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -pthread")
+option(BUILD_CUDA_LIB "Build CUDA library" ON)
 
 include(cmake/rosidl_get_typesupport_target.cmake)
 
@@ -72,10 +74,37 @@ ament_target_dependencies(${PROJECT_NAME}_imageProjection ${ros2_lib})
 target_link_libraries(${PROJECT_NAME}_imageProjection "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
 # # Mapping Optimization
-add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp ${common_lib})
-target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
-ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+if (BUILD_CUDA_LIB)
+  find_package(CUDA REQUIRED)
+  include_directories(${CUDA_INCLUDE_DIRS})
+  link_directories(${CUDA_LIBRARY_DIRS})
+  add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp ${common_lib})
+
+  if(CUDA_FOUND)
+    SET(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};-DFLANN_USE_CUDA;-Xcudafe \"--diag_suppress=partial_override\" ;-gencode=arch=compute_52,code=\"sm_52,compute_52\";-gencode=arch=compute_61,code=\"sm_61,compute_61\"")
+    if(CMAKE_COMPILER_IS_GNUCC)
+    set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};-Xcompiler;-fPIC;" )
+      if (NVCC_COMPILER_BINDIR)
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};--compiler-bindir=${NVCC_COMPILER_BINDIR}")
+      endif()
+    else()
+      set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};" )
+    endif()
+
+    set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY CUDA_ARCHITECTURES "72;86")
+    set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY COMPILE_DEFINITIONS FLANN_USE_CUDA)
+    target_link_libraries(${PROJECT_NAME}_mapOptimization ${CUDA_LIBRARIES})
+  else()
+    message(WARNING "CUDA not found :c, CUDA library will not be built")
+  endif()
+
+else()
+  add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp ${common_lib})
+endif()
+
+target_compile_options(${PROJECT_NAME}_mapOptimization PRIVATE ${OpenMP_CXX_FLAGS})
+ament_target_dependencies(${PROJECT_NAME}_mapOptimization ${ros2_lib})
+target_link_libraries(${PROJECT_NAME}_mapOptimization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})
@@ -91,7 +120,7 @@ install(
   TARGETS 
 	${PROJECT_NAME}_imageProjection
 	${PROJECT_NAME}_imuPreintegration
-	${PROJECT_NAME}_mapOptmization
+	${PROJECT_NAME}_mapOptimization
   DESTINATION lib/${PROJECT_NAME}
 )
 

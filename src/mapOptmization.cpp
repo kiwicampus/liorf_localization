@@ -11,10 +11,15 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
-#include "cudaflann.hpp"
 #include "liorf_localization/msg/cloud_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
 #include "utility.h"
+
+#ifdef FLANN_USE_CUDA
+#include "cudaflann.hpp"
+#else
+#include "nanoflann_pcl.h"
+#endif
 
 #include <gtsam/nonlinear/ISAM2.h>
 
@@ -101,10 +106,17 @@ class mapOptimization : public ParamServer
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
 
+#ifdef FLANN_USE_CUDA
     cudaflann::KdTreeFLANN<PointType> kdtreeSurfFromMap;
 
     cudaflann::KdTreeFLANN<PointType> kdtreeSurroundingKeyPoses;
     cudaflann::KdTreeFLANN<PointType> kdtreeHistoryKeyPoses;
+#else
+    nanoflann::KdTreeFLANN<PointType> kdtreeSurfFromMap;
+
+    nanoflann::KdTreeFLANN<PointType> kdtreeSurroundingKeyPoses;
+    nanoflann::KdTreeFLANN<PointType> kdtreeHistoryKeyPoses;
+#endif
 
     pcl::VoxelGrid<PointType> downSizeFilterSurf;
     pcl::VoxelGrid<PointType> downSizeFilterLocalMapSurf;
@@ -566,8 +578,11 @@ class mapOptimization : public ParamServer
         if (pubLaserCloudSurround->get_subscription_count() == 0) return;
 
         if (cloudKeyPoses3D->points.empty() == true) return;
-
+#ifdef FLANN_USE_CUDA
+        cudaflann::KdTreeFLANN<PointType> kdtreeGlobalMap;
+#else
         nanoflann::KdTreeFLANN<PointType> kdtreeGlobalMap;
+#endif
         pcl::PointCloud<PointType>::Ptr globalMapKeyPoses(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
