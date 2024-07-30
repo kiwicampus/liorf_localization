@@ -37,7 +37,7 @@ find_package(flann REQUIRED)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
 find_package(GeographicLib REQUIRED)
 
-set(ros2_lib "rclcpp;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs;flann"")
+set(ros2_lib "rclcpp;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs;flann")
 
 rosidl_generate_interfaces(${PROJECT_NAME} 
   "msg/CloudInfo.msg"
@@ -109,7 +109,7 @@ endif()
 
 target_compile_options(${PROJECT_NAME}_mapOptimization PRIVATE ${OpenMP_CXX_FLAGS})
 ament_target_dependencies(${PROJECT_NAME}_mapOptimization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam flann::flann_cuda)
+target_link_libraries(${PROJECT_NAME}_mapOptimization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam flann::flann_cuda)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})

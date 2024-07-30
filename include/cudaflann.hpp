@@ -32,7 +32,7 @@ class KdTreeFLANN
         size_t noOfPts = inCloud->size();
         thrust::host_vector<float4> cloudHostThrust(noOfPts);
 
-        for (int i = 0; i < noOfPts; i++)
+        for (size_t i = 0; i < noOfPts; i++)
             cloudHostThrust[i] = make_float4(inCloud->at(i).x, inCloud->at(i).y, inCloud->at(i).z, 0);
 
         thrust::device_vector<float4> cldDevice = cloudHostThrust;
