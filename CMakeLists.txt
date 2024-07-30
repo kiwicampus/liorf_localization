@@ -86,6 +86,12 @@ add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${com
 ament_target_dependencies(${PROJECT_NAME}_imuPreintegration ${ros2_lib})
 target_link_libraries(${PROJECT_NAME}_imuPreintegration Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
+# WheelOdom Preintegration
+add_executable(${PROJECT_NAME}_wheelOdomPreintegration src/wheelOdomPreintegration.cpp ${common_lib})
+ament_target_dependencies(${PROJECT_NAME}_wheelOdomPreintegration ${ros2_lib})
+target_link_libraries(${PROJECT_NAME}_wheelOdomPreintegration Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+
+
 install(
   DIRECTORY launch config rviz
   DESTINATION share/${PROJECT_NAME}/
@@ -95,6 +101,7 @@ install(
   TARGETS 
 	${PROJECT_NAME}_imageProjection
 	${PROJECT_NAME}_imuPreintegration
+  ${PROJECT_NAME}_wheelOdomPreintegration
 	${PROJECT_NAME}_mapOptmization
   DESTINATION lib/${PROJECT_NAME}
 )

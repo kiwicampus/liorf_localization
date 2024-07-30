@@ -45,6 +45,13 @@ def generate_launch_description():
             # ),
             Node(
                 package="liorf_localization",
+                executable="liorf_localization_wheelOdomPreintegration",
+                name="liorf_localization_wheelOdomPreintegration",
+                parameters=[parameter_file],
+                output="screen",
+            ),
+            Node(
+                package="liorf_localization",
                 executable="liorf_localization_imageProjection",
                 name="liorf_localization_imageProjection",
                 parameters=[parameter_file],
