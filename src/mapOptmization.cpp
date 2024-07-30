@@ -1,4 +1,4 @@
-#include <flann/flann.h>
+
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/inference/Symbol.h>
@@ -11,9 +11,9 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
+#include "cudaflann.hpp"
 #include "liorf_localization/msg/cloud_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
-#include "nanoflann_pcl.h"
 #include "utility.h"
 
 #include <gtsam/nonlinear/ISAM2.h>
@@ -101,10 +101,10 @@ class mapOptimization : public ParamServer
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
 
-    nanoflann::KdTreeFLANN<PointType> kdtreeSurfFromMap;
+    cudaflann::KdTreeFLANN<PointType> kdtreeSurfFromMap;
 
-    nanoflann::KdTreeFLANN<PointType> kdtreeSurroundingKeyPoses;
-    nanoflann::KdTreeFLANN<PointType> kdtreeHistoryKeyPoses;
+    cudaflann::KdTreeFLANN<PointType> kdtreeSurroundingKeyPoses;
+    cudaflann::KdTreeFLANN<PointType> kdtreeHistoryKeyPoses;
 
     pcl::VoxelGrid<PointType> downSizeFilterSurf;
     pcl::VoxelGrid<PointType> downSizeFilterLocalMapSurf;
