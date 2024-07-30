@@ -141,11 +141,11 @@ public:
         if(lidarFrame != baselinkFrame)
             tCur *= lidar2Baselink;
 
-        tf2::Stamped<tf2::Transform> temp_odom_to_base(tCur, time_point, odometryFrame);
-        geometry_msgs::msg::TransformStamped trans_odom_to_base_link;
-        tf2::convert(temp_odom_to_base, trans_odom_to_base_link);
-        trans_odom_to_base_link.child_frame_id = baselinkFrame;
-        tfOdom2BaseLink->sendTransform(trans_odom_to_base_link);
+        // tf2::Stamped<tf2::Transform> temp_odom_to_base(tCur, time_point, odometryFrame);
+        // geometry_msgs::msg::TransformStamped trans_odom_to_base_link;
+        // tf2::convert(temp_odom_to_base, trans_odom_to_base_link);
+        // trans_odom_to_base_link.child_frame_id = baselinkFrame;
+        // tfOdom2BaseLink->sendTransform(trans_odom_to_base_link);
 
         // publish IMU path
         static nav_msgs::msg::Path imuPath;

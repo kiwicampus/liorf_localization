@@ -162,7 +162,12 @@ class ParamServer : public rclcpp::Node
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
 
-    ParamServer(std::string node_name, const rclcpp::NodeOptions& options) : Node(node_name, options)
+    float mappingGpsDatumLatitude;
+    float mappingGpsDatumLongitude;
+    float mappingGpsDatumAltitude;
+    float mappingGpsCloudTimeOffset;
+
+    ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
         declare_parameter<string>("history_policy", "history_keep_last");
         get_parameter("history_policy", history_policy);
@@ -326,6 +331,15 @@ class ParamServer : public rclcpp::Node
         declare_parameter<float>("globalMapVisualizationLeafSize", 1.0f);
         get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
 
+        declare_parameter<float>("mappingGpsDatumLatitude", 0.0f);
+        get_parameter("mappingGpsDatumLatitude", mappingGpsDatumLatitude);
+        declare_parameter<float>("mappingGpsDatumLongitude", 0.0f);
+        get_parameter("mappingGpsDatumLongitude", mappingGpsDatumLongitude);
+        declare_parameter<float>("mappingGpsDatumAltitude", 0.0f);
+        get_parameter("mappingGpsDatumAltitude", mappingGpsDatumAltitude);
+        declare_parameter<float>("mappingGpsCloudTimeOffset", 0.0f);
+        get_parameter("mappingGpsCloudTimeOffset", mappingGpsCloudTimeOffset);
+
         usleep(100);
     }
 
@@ -381,7 +395,31 @@ sensor_msgs::msg::PointCloud2 publishCloud(const rclcpp::Publisher<sensor_msgs::
     return tempCloud;
 }
 
-template <typename T>
+template<typename T>
+struct always_false : std::false_type {};
+
+template<typename T>
+void publishPoseWithCovariance(const rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr &thisPub, const T& thisPose, rclcpp::Time thisStamp, std::string thisFrame)
+{
+    geometry_msgs::msg::PoseWithCovarianceStamped tempPose;
+
+    if constexpr (std::is_same<T, geometry_msgs::msg::Pose>::value) {
+        tempPose.pose.pose = thisPose;
+    } else if constexpr (std::is_same<T, geometry_msgs::msg::PoseWithCovariance>::value) {
+        tempPose.pose = thisPose;
+    } else {
+        static_assert(always_false<T>::value, "Unsupported type for thisPose. Must be Pose or PoseWithCovariance.");
+    }
+
+    tempPose.header.stamp = thisStamp;
+    tempPose.header.frame_id = thisFrame;
+
+    if (thisPub->get_subscription_count() != 0)
+        thisPub->publish(tempPose);
+
+}
+
+template<typename T>
 double ROS_TIME(T msg)
 {
     return rclcpp::Time(msg).seconds();
@@ -403,8 +441,33 @@ void imuAccel2rosAccel(sensor_msgs::msg::Imu* thisImuMsg, T* acc_x, T* acc_y, T*
     *acc_z = thisImuMsg->linear_acceleration.z;
 }
 
-template <typename T>
-void imuRPY2rosRPY(sensor_msgs::msg::Imu* thisImuMsg, T* rosRoll, T* rosPitch, T* rosYaw)
+std::array<double, 36> matrixToArray(const Eigen::MatrixXd& matrix, double max_translation_covariance, double max_rotation_covariance)
+{
+    std::array<double, 36> array = {0.0};
+
+    // Ensure the input matrix is 6x6
+    if (matrix.rows() == 6 && matrix.cols() == 6) {
+        for (size_t i = 0; i < 6; ++i) {
+            double value = matrix(i, i);
+            value = std::abs(value); // Ensure non-negative values
+            if (i < 3) {
+                // Translation covariance
+                array[i * 6 + i] = std::min(value, max_translation_covariance);
+            } else {
+                // Rotation covariance
+                array[i * 6 + i] = std::min(value, max_rotation_covariance);
+            }
+        }
+    } else {
+        throw std::runtime_error("Input matrix is not 6x6");
+    }
+
+    return array;
+}
+
+
+template<typename T>
+void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)
 {
     double imuRoll, imuPitch, imuYaw;
     tf2::Quaternion orientation;
