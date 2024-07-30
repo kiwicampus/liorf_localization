@@ -430,6 +430,30 @@ void imuAccel2rosAccel(sensor_msgs::msg::Imu *thisImuMsg, T *acc_x, T *acc_y, T 
     *acc_z = thisImuMsg->linear_acceleration.z;
 }
 
+std::array<double, 36> matrixToArray(const Eigen::MatrixXd& matrix, double max_translation_covariance, double max_rotation_covariance)
+{
+    std::array<double, 36> array = {0.0};
+
+    // Ensure the input matrix is 6x6
+    if (matrix.rows() == 6 && matrix.cols() == 6) {
+        for (size_t i = 0; i < 6; ++i) {
+            double value = matrix(i, i);
+            value = std::abs(value); // Ensure non-negative values
+            if (i < 3) {
+                // Translation covariance
+                array[i * 6 + i] = std::min(value, max_translation_covariance);
+            } else {
+                // Rotation covariance
+                array[i * 6 + i] = std::min(value, max_rotation_covariance);
+            }
+        }
+    } else {
+        throw std::runtime_error("Input matrix is not 6x6");
+    }
+
+    return array;
+}
+
 
 template<typename T>
 void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)

@@ -12,10 +12,10 @@
     gpsTopic: "/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
-    lidarFrame: "laser_link"
+    lidarFrame: "livox_link"
     baselinkFrame: "base_link"
     odometryFrame: "liorf_odom"
-    mapFrame: "liorf_map"
+    mapFrame: "map"
 
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"
