@@ -139,11 +139,11 @@ public:
         if(lidarFrame != baselinkFrame)
             tCur *= lidar2Baselink;
 
-        tf2::Stamped<tf2::Transform> temp_odom_to_base(tCur, time_point, mapFrame);
-        geometry_msgs::msg::TransformStamped trans_odom_to_base_link;
-        tf2::convert(temp_odom_to_base, trans_odom_to_base_link);
-        trans_odom_to_base_link.child_frame_id = baselinkFrame;
-        tfOdom2BaseLink->sendTransform(trans_odom_to_base_link);
+        // tf2::Stamped<tf2::Transform> temp_odom_to_base(tCur, time_point, mapFrame);
+        // geometry_msgs::msg::TransformStamped trans_odom_to_base_link;
+        // tf2::convert(temp_odom_to_base, trans_odom_to_base_link);
+        // trans_odom_to_base_link.child_frame_id = baselinkFrame;
+        // tfOdom2BaseLink->sendTransform(trans_odom_to_base_link);
 
         // publish WheelOdom path
         static nav_msgs::msg::Path wheelOdomPath;
@@ -216,9 +216,9 @@ public:
             "/wheel_odometry/global_odometry", 10,
             std::bind(&WheelOdometryPreintegration::wheelOdometryHandler, this, std::placeholders::_1));
 
-        subIncrementalOdometry = create_subscription<nav_msgs::msg::Odometry>(
-            "liorf_localization/mapping/odometry_incremental", 10,
-            std::bind(&WheelOdometryPreintegration::incrementalOdometryHandler, this, std::placeholders::_1));
+        // subIncrementalOdometry = create_subscription<nav_msgs::msg::Odometry>(
+        //     "liorf_localization/mapping/odometry_incremental", 10,
+        //     std::bind(&WheelOdometryPreintegration::incrementalOdometryHandler, this, std::placeholders::_1));
 
         pubOdometry = create_publisher<nav_msgs::msg::Odometry>(
             odomTopic+"_incremental", 10);
@@ -319,8 +319,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        if (doneFirstOpt == false)
-            return;
+        // if (doneFirstOpt == false)
+        //     return;
 
         // Calculate time difference
         double currentTime = ROS_TIME(odomMsg->header.stamp);
