@@ -46,24 +46,37 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         // Calculate time difference
-        double currentTime = ROS_TIME(odomMsg->header.stamp);
-        if (lastUpdateTime == 0) { // Initialize if it's the first message
-            lastUpdateTime = currentTime;
-            return;
-        }
-        double dt = currentTime - lastUpdateTime;
+        // double currentTime = ROS_TIME(odomMsg->header.stamp);
+        // if (lastUpdateTime == 0) { // Initialize if it's the first message
+        //     lastUpdateTime = currentTime;
+        //     return;
+        // }
+        // double dt = currentTime - lastUpdateTime;
 
-        // Simple integration to update pose
-        double dx = odomMsg->twist.twist.linear.x * dt;
-        double dy = odomMsg->twist.twist.linear.y * dt;
-        double dtheta = odomMsg->twist.twist.angular.z * dt;
+        // // Simple integration to update pose
+        // double dx = odomMsg->twist.twist.linear.x * dt;
+        // double dy = odomMsg->twist.twist.linear.y * dt;
+        // double dtheta = odomMsg->twist.twist.angular.z * dt;
 
-        // Update pose estimates
-        double prevTheta = prevPose_.rotation().yaw();
-        double newX = prevPose_.x() + (dx * cos(prevTheta) - dy * sin(prevTheta));
-        double newY = prevPose_.y() + (dx * sin(prevTheta) + dy * cos(prevTheta));
-        double newTheta = prevTheta + dtheta;
+        // // Update pose estimates
+        // double prevTheta = prevPose_.rotation().yaw();
+        // double newX = prevPose_.x() + (dx * cos(prevTheta) - dy * sin(prevTheta));
+        // double newY = prevPose_.y() + (dx * sin(prevTheta) + dy * cos(prevTheta));
+        // double newTheta = prevTheta + dtheta;
         double prev_z = prevPose_.z();
+         // Extract pose from odometry message
+        double newX = odomMsg->pose.pose.position.x;
+        double newY = odomMsg->pose.pose.position.y;
+        // double newZ = odomMsg->pose.pose.position.z;
+
+        // Extract orientation from odometry message and convert to yaw
+        tf2::Quaternion quat(
+            odomMsg->pose.pose.orientation.x,
+            odomMsg->pose.pose.orientation.y,
+            odomMsg->pose.pose.orientation.z,
+            odomMsg->pose.pose.orientation.w);
+        double roll, pitch, newTheta;
+        tf2::Matrix3x3(quat).getRPY(roll, pitch, newTheta);
 
         // Create a new pose
         gtsam::Pose3 newPose(gtsam::Rot3::Rz(newTheta), gtsam::Point3(newX, newY, prev_z));
@@ -72,7 +85,7 @@ public:
         prevPose_ = newPose;
         prevVel_ = gtsam::Vector3(odomMsg->twist.twist.linear.x, odomMsg->twist.twist.linear.y, 0);
         prevState_ = gtsam::NavState(newPose, prevVel_);
-        lastUpdateTime = currentTime;
+        // lastUpdateTime = currentTime;
 
         // Publish odometry
         publishTransformedOdometry(odomMsg->header.stamp);

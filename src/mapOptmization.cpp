@@ -350,7 +350,7 @@ public:
 
         if(!has_initialize_pose)
         {
-          RCLCPP_WARN_TROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
           return false;
         }
 
