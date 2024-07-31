@@ -85,6 +85,8 @@ class mapOptimization : public ParamServer
 
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubMapPose;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGpsPose;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pubLatency;
+    std_msgs::msg::Float32 msgLatency;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
 
@@ -188,33 +190,23 @@ class mapOptimization : public ParamServer
             "/initialpose", QosPolicy(history_policy, reliability_policy),
             std::bind(&mapOptimization::initialposeHandler, this, std::placeholders::_1));
 
-        pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/trajectory",
-                                                                      QosPolicy(history_policy, reliability_policy));
-        pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/map_global", QosPolicy(history_policy, reliability_policy));
-        pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>(
-            "liorf_localization/mapping/odometry", QosPolicy(history_policy, reliability_policy));
-        pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>(
-            "liorf_localization/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
-        pubPath = create_publisher<nav_msgs::msg::Path>("liorf_localization/mapping/path",
-                                                        QosPolicy(history_policy, reliability_policy));
-        pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
-        pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/icp_loop_closure_corrected_cloud",
-            QosPolicy(history_policy, reliability_policy));
-        pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>(
-            "/liorf_localization/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
-        pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/map_local", QosPolicy(history_policy, reliability_policy));
-        pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
-        pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>(
-            "liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
-        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map",
-                                                                       QosPolicy(history_policy, reliability_policy));
-        pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>(
-            "liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
+        pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/trajectory", QosPolicy(history_policy, reliability_policy));
+        pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/map_global", QosPolicy(history_policy, reliability_policy));
+        pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf_localization/mapping/odometry", QosPolicy(history_policy, reliability_policy));
+        pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf_localization/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
+        pubPath = create_publisher<nav_msgs::msg::Path>("liorf_localization/mapping/path", QosPolicy(history_policy, reliability_policy));
+        pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
+        pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
+        pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf_localization/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
+        pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/map_local", QosPolicy(history_policy, reliability_policy));
+        pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+        pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
+        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", QosPolicy(history_policy, reliability_policy));
+        pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>("liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
+        
+        pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
+        pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
+        pubLatency = create_publisher<std_msgs::msg::Float32>("liorf_localization/mapping/latency", QosPolicy(history_policy, reliability_policy));
 
         pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
             "liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
@@ -353,7 +345,12 @@ class mapOptimization : public ParamServer
 
             downsampleCurrentScan();
 
-            scan2MapOptimization();
+            if(!scan2MapOptimization())
+            {
+                auto end = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed = end - start;
+                RCLCPP_WARN(get_logger(), "Cloud handling timed out after %f seconds. dropping this scan", elapsed.count());
+            }
 
             saveKeyFramesAndFactor();
 
@@ -367,7 +364,9 @@ class mapOptimization : public ParamServer
             std::chrono::duration<double> elapsed = end - start;
 
             // Log the elapsed time
-            RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
+            msgLatency.data = static_cast<float>(elapsed.count());
+            pubLatency->publish(msgLatency);
+            // RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
         }
     }
 
@@ -377,8 +376,8 @@ class mapOptimization : public ParamServer
 
         if (!has_initialize_pose)
         {
-            RCLCPP_WARN(get_logger(), "need initilize pose from rviz.");
-            return false;
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
+          return false;
         }
 
         static pcl::IterativeClosestPoint<PointType, PointType> icp;
@@ -1434,16 +1433,19 @@ class mapOptimization : public ParamServer
         float deltaT = sqrt(pow(matX.at<float>(3, 0) * 100, 2) + pow(matX.at<float>(4, 0) * 100, 2) +
                             pow(matX.at<float>(5, 0) * 100, 2));
 
-        if (deltaR < 0.05 && deltaT < 0.05)
-        {
-            return true;  // converged
+        if (deltaR < static_cast<double>(mappingLmConvergenceRot) && deltaT < static_cast<double>(mappingLmConvergenceTrans)) {
+            return true; // converged
         }
         return false;  // keep optimizing
     }
     // <!-- liorf_localization_yjz_lucky_boy -->
-    void scan2MapOptimization()
+    bool scan2MapOptimization()
     {
-        if (cloudKeyPoses3D->points.empty()) return;
+        if (cloudKeyPoses3D->points.empty())
+            return true;
+
+        auto startTime = std::chrono::high_resolution_clock::now();
+        auto timeout = std::chrono::milliseconds(mappingProcessingTimeoutMs);
 
         if (laserCloudSurfLastDSNum > 30)
         {
@@ -1458,7 +1460,15 @@ class mapOptimization : public ParamServer
 
                 combineOptimizationCoeffs();
 
-                if (LMOptimization(iterCount) == true) break;
+                if (LMOptimization(iterCount) == true)
+                    break;              
+                auto currentTime = std::chrono::high_resolution_clock::now();
+                auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
+                if (elapsedTime > timeout)
+                {
+                    RCLCPP_WARN(get_logger(), "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount, static_cast<float>(elapsedTime.count())/iterCount);
+                    return false;
+                }
             }
 
             transformUpdate();
@@ -1468,6 +1478,7 @@ class mapOptimization : public ParamServer
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.",
                         laserCloudSurfLastDSNum);
         }
+        return true;
     }
 
     void transformUpdate()
@@ -1610,13 +1621,13 @@ class mapOptimization : public ParamServer
                 curGPSPoint.x = gps_x;
                 curGPSPoint.y = gps_y;
                 curGPSPoint.z = gps_z;
-                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
+                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < mappingGpsAddingDist)
                     continue;
                 else
                     lastGPSPoint = curGPSPoint;
 
                 gtsam::Vector Vector3(3);
-                Vector3 << max(noise_x, 0.3f), max(noise_y, 0.3f), max(noise_z, 0.3f);
+                Vector3 << max(noise_x, mappingGpsCovariance), max(noise_y, mappingGpsCovariance), max(noise_z, mappingGpsCovariance);
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
                 gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
                 gtSAMgraph.add(gps_factor);

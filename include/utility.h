@@ -7,16 +7,17 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <common_lib.h>
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/float32.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <std_msgs/msg/float64_multi_array.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <std_msgs/msg/header.hpp>
-#include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
@@ -166,6 +167,12 @@ class ParamServer : public rclcpp::Node
     float mappingGpsDatumLongitude;
     float mappingGpsDatumAltitude;
     float mappingGpsCloudTimeOffset;
+    float mappingGpsCovariance;
+    float mappingGpsAddingDist;
+    
+    float mappingLmConvergenceTrans;
+    float mappingLmConvergenceRot;
+    int mappingProcessingTimeoutMs;
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
@@ -339,6 +346,16 @@ class ParamServer : public rclcpp::Node
         get_parameter("mappingGpsDatumAltitude", mappingGpsDatumAltitude);
         declare_parameter<float>("mappingGpsCloudTimeOffset", 0.0f);
         get_parameter("mappingGpsCloudTimeOffset", mappingGpsCloudTimeOffset);
+        declare_parameter<float>("mappingGpsCovariance", 0.01f);
+        get_parameter("mappingGpsCovariance", mappingGpsCovariance);
+        declare_parameter<float>("mappingGpsAddingDist", 1.0f);
+        get_parameter("mappingGpsAddingDist", mappingGpsAddingDist);
+        declare_parameter<float>("mappingLmConvergenceTrans", 0.05f);
+        get_parameter("mappingLmConvergenceTrans", mappingLmConvergenceTrans);
+        declare_parameter<float>("mappingLmConvergenceRot", 0.05f);
+        get_parameter("mappingLmConvergenceRot", mappingLmConvergenceRot);
+        declare_parameter<int>("mappingProcessingTimeoutMs", 200);
+        get_parameter("mappingProcessingTimeoutMs", mappingProcessingTimeoutMs);
 
         usleep(100);
     }
