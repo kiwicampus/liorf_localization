@@ -83,6 +83,27 @@ def generate_launch_description():
             arguments=['-d', rviz_config_file],
             output='screen'
         ))
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_transform_publisher",
+            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "livox_link"],
+            output="screen",
+        ),
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_transform_publisher",
+            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "laser_link"],
+            output="screen",
+        ),
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_transform_publisher",
+            arguments=["0", "0", "0", "0", "0", "0", "base_link", "gps"],
+            output="screen",
+        ),
         launch_description.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('location'), 'launch', 'robot_localization.launch.py')]),

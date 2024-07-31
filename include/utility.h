@@ -9,6 +9,7 @@
 #include <std_msgs/msg/header.hpp>
 #include <common_lib.h>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -159,6 +160,12 @@ public:
     float mappingGpsDatumLongitude;
     float mappingGpsDatumAltitude;
     float mappingGpsCloudTimeOffset;
+    float mappingGpsCovariance;
+    float mappingGpsAddingDist;
+    
+    float mappingLmConvergenceTrans;
+    float mappingLmConvergenceRot;
+    int mappingProcessingTimeoutMs;
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
@@ -330,6 +337,16 @@ public:
         get_parameter("mappingGpsDatumAltitude", mappingGpsDatumAltitude);
         declare_parameter<float>("mappingGpsCloudTimeOffset", 0.0f);
         get_parameter("mappingGpsCloudTimeOffset", mappingGpsCloudTimeOffset);
+        declare_parameter<float>("mappingGpsCovariance", 0.01f);
+        get_parameter("mappingGpsCovariance", mappingGpsCovariance);
+        declare_parameter<float>("mappingGpsAddingDist", 1.0f);
+        get_parameter("mappingGpsAddingDist", mappingGpsAddingDist);
+        declare_parameter<float>("mappingLmConvergenceTrans", 0.05f);
+        get_parameter("mappingLmConvergenceTrans", mappingLmConvergenceTrans);
+        declare_parameter<float>("mappingLmConvergenceRot", 0.05f);
+        get_parameter("mappingLmConvergenceRot", mappingLmConvergenceRot);
+        declare_parameter<int>("mappingProcessingTimeoutMs", 200);
+        get_parameter("mappingProcessingTimeoutMs", mappingProcessingTimeoutMs);
 
         usleep(100);
     }

@@ -115,3 +115,9 @@
     mappingGpsDatumLongitude: -122.92470385245429
     mappingGpsDatumAltitude: 39.0
     mappingGpsCloudTimeOffset: 0.0
+    mappingGpsCovariance: 0.01
+    mappingGpsAddingDist: 0.3
+    
+    mappingLmConvergenceTrans: 0.05
+    mappingLmConvergenceRot: 0.05
+    mappingProcessingTimeoutMs: 200

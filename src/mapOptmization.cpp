@@ -83,6 +83,8 @@ public:
 
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubMapPose;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGpsPose;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pubLatency;
+    std_msgs::msg::Float32 msgLatency;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
 
@@ -190,6 +192,7 @@ public:
         
         pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
         pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
+        pubLatency = create_publisher<std_msgs::msg::Float32>("liorf_localization/mapping/latency", QosPolicy(history_policy, reliability_policy));
 
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
@@ -314,7 +317,12 @@ public:
 
             downsampleCurrentScan();
 
-            scan2MapOptimization();
+            if(!scan2MapOptimization())
+            {
+                auto end = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed = end - start;
+                RCLCPP_WARN(get_logger(), "Cloud handling timed out after %f seconds. dropping this scan", elapsed.count());
+            }
 
             saveKeyFramesAndFactor();
 
@@ -328,7 +336,9 @@ public:
             std::chrono::duration<double> elapsed = end - start;
 
             // Log the elapsed time
-            RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
+            msgLatency.data = static_cast<float>(elapsed.count());
+            pubLatency->publish(msgLatency);
+            // RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
         }
 
     }
@@ -340,7 +350,7 @@ public:
 
         if(!has_initialize_pose)
         {
-          RCLCPP_WARN(get_logger(), "need initilize pose from rviz.");
+          RCLCPP_WARN_TROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
           return false;
         }
 
@@ -1306,16 +1316,19 @@ public:
                             pow(matX.at<float>(4, 0) * 100, 2) +
                             pow(matX.at<float>(5, 0) * 100, 2));
 
-        if (deltaR < 0.05 && deltaT < 0.05) {
+        if (deltaR < static_cast<double>(mappingLmConvergenceRot) && deltaT < static_cast<double>(mappingLmConvergenceTrans)) {
             return true; // converged
         }
         return false; // keep optimizing
     }
     // <!-- liorf_localization_yjz_lucky_boy -->
-    void scan2MapOptimization()
+    bool scan2MapOptimization()
     {
         if (cloudKeyPoses3D->points.empty())
-            return;
+            return true;
+
+        auto startTime = std::chrono::high_resolution_clock::now();
+        auto timeout = std::chrono::milliseconds(mappingProcessingTimeoutMs);
 
         if (laserCloudSurfLastDSNum > 30)
         {
@@ -1332,12 +1345,20 @@ public:
 
                 if (LMOptimization(iterCount) == true)
                     break;              
+                auto currentTime = std::chrono::high_resolution_clock::now();
+                auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
+                if (elapsedTime > timeout)
+                {
+                    RCLCPP_WARN(get_logger(), "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount, static_cast<float>(elapsedTime.count())/iterCount);
+                    return false;
+                }
             }
 
             transformUpdate();
         } else {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
         }
+        return true;
     }
 
     void transformUpdate()
@@ -1482,13 +1503,13 @@ public:
                 curGPSPoint.x = gps_x;
                 curGPSPoint.y = gps_y;
                 curGPSPoint.z = gps_z;
-                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
+                if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < mappingGpsAddingDist)
                     continue;
                 else
                     lastGPSPoint = curGPSPoint;
 
                 gtsam::Vector Vector3(3);
-                Vector3 << max(noise_x, 0.3f), max(noise_y, 0.3f), max(noise_z, 0.3f);
+                Vector3 << max(noise_x, mappingGpsCovariance), max(noise_y, mappingGpsCovariance), max(noise_z, mappingGpsCovariance);
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
                 gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
                 gtSAMgraph.add(gps_factor);
