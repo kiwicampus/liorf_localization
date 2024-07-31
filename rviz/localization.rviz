@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /Status1
         - /Common1
         - /Common1/Map1
         - /Localization1
@@ -16,7 +17,7 @@ Panels:
         - /Imu1
         - /Imu1/Box properties1
       Splitter Ratio: 0.5
-    Tree Height: 828
+    Tree Height: 801
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -222,7 +223,7 @@ Visualization Manager:
       Name: PoseWithCovariance
       Shaft Length: 1
       Shaft Radius: 0.10000000149011612
-      Shape: Arrow
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -370,35 +371,35 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 281.74176025390625
+      Distance: 153.2148895263672
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 660.1041870117188
-        Y: 724.3231201171875
-        Z: -62.27456283569336
+        X: 817.7227172851562
+        Y: 710.59619140625
+        Z: -53.19646072387695
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5297963619232178
+      Pitch: 1.0297962427139282
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.778576374053955
+      Yaw: 6.150351524353027
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1043
+  Height: 1016
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd000000020000000000000156000003bdfc0200000001fb000000100044006900730070006c006100790073010000003b000003bd000000c700ffffff0000000100000100000003bdfc0200000001fb0000000a00560069006500770073010000003b000003bd000000a000ffffff0000051e000003bd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd000000020000000000000207000003a2fc0200000001fb000000100044006900730070006c006100790073010000003b000003a2000000c700ffffff0000000100000100000003a2fc0200000001fb0000000a00560069006500770073010000003b000003a2000000a000ffffff0000046d000003a200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 1920
-  X: 0
-  Y: 0
+  X: 1920
+  Y: 27

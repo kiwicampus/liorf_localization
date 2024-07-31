@@ -98,7 +98,7 @@ if (BUILD_CUDA_LIB)
 
     set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY CUDA_ARCHITECTURES "72;86")
     set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY COMPILE_DEFINITIONS FLANN_USE_CUDA)
-    target_link_libraries(${PROJECT_NAME}_mapOptimization ${CUDA_LIBRARIES})
+    target_link_libraries(${PROJECT_NAME}_mapOptimization ${CUDA_LIBRARIES} flann::flann_cuda)
   else()
     message(WARNING "CUDA not found :c, CUDA library will not be built")
   endif()
@@ -109,7 +109,7 @@ endif()
 
 target_compile_options(${PROJECT_NAME}_mapOptimization PRIVATE ${OpenMP_CXX_FLAGS})
 ament_target_dependencies(${PROJECT_NAME}_mapOptimization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptimization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam flann::flann_cuda)
+target_link_libraries(${PROJECT_NAME}_mapOptimization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})

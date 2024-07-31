@@ -57,7 +57,7 @@ public:
                 tf2::fromMsg(tfBuffer->lookupTransform(
                     lidarFrame, baselinkFrame, rclcpp::Time(0)), lidar2Baselink);
             }
-            catch (tf2::TransformException ex)
+            catch (tf2::TransformException& ex)
             {
                 RCLCPP_ERROR(get_logger(), "%s", ex.what());
             }
@@ -99,7 +99,7 @@ public:
         // static tf
         tf2::Quaternion quat_tf;
         rclcpp::Time t(static_cast<uint32_t>(lidarOdomTime * 1e9));
-        tf2::TimePoint time_point = tf2_ros::fromRclcpp(t);
+        // tf2::TimePoint time_point = tf2_ros::fromRclcpp(t);
         std::lock_guard<std::mutex> lock(mtx);
 
         wheelOdomQueue.push_back(*odomMsg);
@@ -423,7 +423,7 @@ public:
         gtsam::Pose3 pose = prevState_.pose();
         gtsam::Pose3 lidarPose = pose.compose(wheel2Lidar);
         // velocity
-        gtsam::Vector3 velocity = prevState_.velocity();
+        //gtsam::Vector3 velocity = prevState_.velocity();
         nav_msgs::msg::Odometry odometry;
         odometry.header.stamp = timestamp;
         odometry.header.frame_id = mapFrame;

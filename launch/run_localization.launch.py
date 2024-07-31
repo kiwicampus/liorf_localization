@@ -42,8 +42,8 @@ def generate_launch_description():
         ),
         Node(
             package="liorf_localization",
-            executable="liorf_localization_mapOptmization",
-            name="liorf_localization_mapOptmization",
+            executable="liorf_localization_mapOptimization",
+            name="liorf_localization_mapOptimization",
             parameters=[parameter_file],
             # prefix=["valgrind --tool=callgrind --instr-atstart=no"],
             output="screen",

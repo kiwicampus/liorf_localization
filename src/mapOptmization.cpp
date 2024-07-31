@@ -175,32 +175,51 @@ class mapOptimization : public ParamServer
         parameters.relinearizeSkip = 1;
         isam = new ISAM2(parameters);
 
-        subCloud = create_subscription<liorf_localization::msg::CloudInfo>("liorf_localization/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
-                    std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
-        subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
-                    std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
-        subLoop = create_subscription<std_msgs::msg::Float64MultiArray>("lio_loop/loop_closure_detection", QosPolicy(history_policy, reliability_policy),
-                    std::bind(&mapOptimization::loopInfoHandler, this, std::placeholders::_1));
-        sub_initial_pose = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", QosPolicy(history_policy, reliability_policy),
-                    std::bind(&mapOptimization::initialposeHandler, this, std::placeholders::_1));
+        subCloud = create_subscription<liorf_localization::msg::CloudInfo>(
+            "liorf_localization/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
+            std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
+        subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(
+            gpsTopic, QosPolicy(history_policy, reliability_policy),
+            std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
+        subLoop = create_subscription<std_msgs::msg::Float64MultiArray>(
+            "lio_loop/loop_closure_detection", QosPolicy(history_policy, reliability_policy),
+            std::bind(&mapOptimization::loopInfoHandler, this, std::placeholders::_1));
+        sub_initial_pose = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            "/initialpose", QosPolicy(history_policy, reliability_policy),
+            std::bind(&mapOptimization::initialposeHandler, this, std::placeholders::_1));
 
-        pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/trajectory", QosPolicy(history_policy, reliability_policy));
-        pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/map_global", QosPolicy(history_policy, reliability_policy));
-        pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf_localization/mapping/odometry", QosPolicy(history_policy, reliability_policy));
-        pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf_localization/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
-        pubPath = create_publisher<nav_msgs::msg::Path>("liorf_localization/mapping/path", QosPolicy(history_policy, reliability_policy));
-        pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
-        pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
-        pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf_localization/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
-        pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/map_local", QosPolicy(history_policy, reliability_policy));
-        pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
-        pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
-        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", QosPolicy(history_policy, reliability_policy));
-        pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>("liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
-        
-        pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
-        pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
+        pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/trajectory",
+                                                                      QosPolicy(history_policy, reliability_policy));
+        pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/map_global", QosPolicy(history_policy, reliability_policy));
+        pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>(
+            "liorf_localization/mapping/odometry", QosPolicy(history_policy, reliability_policy));
+        pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>(
+            "liorf_localization/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
+        pubPath = create_publisher<nav_msgs::msg::Path>("liorf_localization/mapping/path",
+                                                        QosPolicy(history_policy, reliability_policy));
+        pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
+        pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/icp_loop_closure_corrected_cloud",
+            QosPolicy(history_policy, reliability_policy));
+        pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>(
+            "/liorf_localization/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
+        pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/map_local", QosPolicy(history_policy, reliability_policy));
+        pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+        pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>(
+            "liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
+        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map",
+                                                                       QosPolicy(history_policy, reliability_policy));
+        pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>(
+            "liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
 
+        pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            "liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
+        pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            "liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
@@ -414,26 +433,29 @@ class mapOptimization : public ParamServer
 
     void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
     {
-        if (gpsMsg->status.status != 0 && gpsMsg->status.status != 2)
-            return;
+        if (gpsMsg->status.status != 0 && gpsMsg->status.status != 2) return;
 
         Eigen::Vector3d trans_local_;
         static bool first_gps = false;
-        if (!first_gps) {
+        if (!first_gps)
+        {
             first_gps = true;
-            if(mappingGpsDatumLatitude != 0.0 || mappingGpsDatumLongitude != 0)
+            if (mappingGpsDatumLatitude != 0.0 || mappingGpsDatumLongitude != 0)
             {
                 gps_trans_.Reset(mappingGpsDatumLatitude, mappingGpsDatumLongitude, mappingGpsDatumAltitude);
-                std::cout << "First pose saved from Datum: latitude " << mappingGpsDatumLatitude << ", longitude: " << mappingGpsDatumLongitude << std::endl;
+                std::cout << "First pose saved from Datum: latitude " << mappingGpsDatumLatitude
+                          << ", longitude: " << mappingGpsDatumLongitude << std::endl;
             }
             else
             {
-                std::cout << "First pose saved from GPS: latitude " << gpsMsg->latitude << ", longitude: " << gpsMsg->longitude << std::endl;
+                std::cout << "First pose saved from GPS: latitude " << gpsMsg->latitude
+                          << ", longitude: " << gpsMsg->longitude << std::endl;
                 gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
             }
         }
 
-        gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
+        gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1],
+                           trans_local_[2]);
 
         nav_msgs::msg::Odometry gps_odom;
         gps_odom.header = gpsMsg->header;
@@ -617,18 +639,30 @@ class mapOptimization : public ParamServer
         pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyFramesDS(new pcl::PointCloud<PointType>());
 
-        // kd-tree to find near key frames to visualize
-        std::vector<int> pointSearchIndGlobalMap;
-        std::vector<float> pointSearchSqDisGlobalMap;
         // search near key frames to visualize
         mtx.lock();
         kdtreeGlobalMap.setInputCloud(cloudKeyPoses3D);
+#ifdef FLANN_USE_CUDA
+        // kd-tree to find near key frames to visualize
+        std::vector<std::vector<int>> pointSearchIndGlobalMap;
+        std::vector<std::vector<float>> pointSearchSqDisGlobalMap;
+        std::vector<PointType> query_point = {cloudKeyPoses3D->back()};
+        kdtreeHistoryKeyPoses.radiusSearch(query_point, globalMapVisualizationSearchRadius, pointSearchIndGlobalMap,
+                                           pointSearchSqDisGlobalMap);
+        auto populate_function = [&](std::vector<int> index) { return cloudKeyPoses3D->points[index[0]]; };
+#else
+        // kd-tree to find near key frames to visualize
+        std::vector<int> pointSearchIndGlobalMap;
+        std::vector<float> pointSearchSqDisGlobalMap;
         kdtreeGlobalMap.radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius,
                                      pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
+        auto populate_function = [&](int index) { return cloudKeyPoses3D->points[index]; };
+#endif
         mtx.unlock();
+        globalMapKeyPoses->resize(pointSearchIndGlobalMap.size());
+        std::transform(pointSearchIndGlobalMap.begin(), pointSearchIndGlobalMap.end(), globalMapKeyPoses->begin(),
+                       populate_function);
 
-        for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
-            globalMapKeyPoses->push_back(cloudKeyPoses3D->points[pointSearchIndGlobalMap[i]]);
         // downsample near selected key frames
         pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyPoses;  // for global map visualization
         downSizeFilterGlobalMapKeyPoses.setLeafSize(globalMapVisualizationPoseDensity,
@@ -636,11 +670,18 @@ class mapOptimization : public ParamServer
                                                     globalMapVisualizationPoseDensity);  // for global map visualization
         downSizeFilterGlobalMapKeyPoses.setInputCloud(globalMapKeyPoses);
         downSizeFilterGlobalMapKeyPoses.filter(*globalMapKeyPosesDS);
+#ifdef FLANN_USE_CUDA
+        kdtreeGlobalMap.nearestKSearch(globalMapKeyPosesDS->points, 1, pointSearchIndGlobalMap,
+                                       pointSearchSqDisGlobalMap);
+        for (size_t i = 0; globalMapKeyPosesDS->points.size(); i++)
+            globalMapKeyPosesDS->points[i].intensity = cloudKeyPoses3D->points[pointSearchIndGlobalMap[i][0]].intensity;
+#else
         for (auto& pt : globalMapKeyPosesDS->points)
         {
             kdtreeGlobalMap.nearestKSearch(pt, 1, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
             pt.intensity = cloudKeyPoses3D->points[pointSearchIndGlobalMap[0]].intensity;
         }
+#endif
 
         // extract visualized and downsampled key frames
         for (int i = 0; i < (int)globalMapKeyPosesDS->size(); ++i)
@@ -772,15 +813,26 @@ class mapOptimization : public ParamServer
         if (it != loopIndexContainer.end()) return false;
 
         // find the closest history key frame
+        kdtreeHistoryKeyPoses.setInputCloud(copy_cloudKeyPoses3D);
+#ifdef FLANN_USE_CUDA
+        std::vector<std::vector<int>> pointSearchIndLoop;
+        std::vector<std::vector<float>> pointSearchSqDisLoop;
+        std::vector<PointType> query_point = {cloudKeyPoses3D->back()};
+        kdtreeHistoryKeyPoses.radiusSearch(query_point, historyKeyframeSearchRadius, pointSearchIndLoop,
+                                           pointSearchSqDisLoop);
+#else
         std::vector<int> pointSearchIndLoop;
         std::vector<float> pointSearchSqDisLoop;
-        kdtreeHistoryKeyPoses.setInputCloud(copy_cloudKeyPoses3D);
         kdtreeHistoryKeyPoses.radiusSearch(copy_cloudKeyPoses3D->back(), historyKeyframeSearchRadius,
                                            pointSearchIndLoop, pointSearchSqDisLoop);
-
-        for (int i = 0; i < (int)pointSearchIndLoop.size(); ++i)
+#endif
+        for (auto index : pointSearchIndLoop)
         {
-            int id = pointSearchIndLoop[i];
+#ifdef FLANN_USE_CUDA
+            int id = index[0];
+#else
+            int id = index;
+#endif
             if (abs(copy_cloudKeyPoses6D->points[id].time - timeLaserInfoCur) > historyKeyframeSearchTimeDiff)
             {
                 loopKeyPre = id;
@@ -1013,26 +1065,41 @@ class mapOptimization : public ParamServer
     {
         pcl::PointCloud<PointType>::Ptr surroundingKeyPoses(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr surroundingKeyPosesDS(new pcl::PointCloud<PointType>());
-        std::vector<int> pointSearchInd;
-        std::vector<float> pointSearchSqDis;
 
         // extract all the nearby key poses and downsample them
         kdtreeSurroundingKeyPoses.setInputCloud(cloudKeyPoses3D);  // create kd-tree
-        kdtreeSurroundingKeyPoses.radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius,
-                                               pointSearchInd, pointSearchSqDis);
-        for (int i = 0; i < (int)pointSearchInd.size(); ++i)
-        {
-            int id = pointSearchInd[i];
-            surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
-        }
+#ifdef FLANN_USE_CUDA
+        std::vector<std::vector<int>> pointSearchInd;
+        std::vector<std::vector<float>> pointSearchSqDis;
+        std::vector<PointType> query_point = {cloudKeyPoses3D->back()};
+        kdtreeSurroundingKeyPoses.radiusSearch(query_point, surroundingKeyframeSearchRadius, pointSearchInd,
+                                               pointSearchSqDis);
+        auto populate_function = [&](std::vector<int> id) { return cloudKeyPoses3D->points[id[0]]; };
+#else
+        std::vector<int> pointSearchInd;
+        std::vector<float> pointSearchSqDis;
+        kdtreeSurroundingKeyPoses.radiusSearch(cloudKeyPoses3D->back(), surroundingKeyframeSearchRadius, pointSearchInd,
+                                               pointSearchSqDis);
+
+        auto populate_function = [&](int id) { return cloudKeyPoses3D->points[id]; };
+#endif
+        surroundingKeyPoses->resize(pointSearchInd.size());
+        std::transform(pointSearchInd.begin(), pointSearchInd.end(), surroundingKeyPoses->begin(), populate_function);
 
         downSizeFilterSurroundingKeyPoses.setInputCloud(surroundingKeyPoses);
         downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
+#ifdef FLANN_USE_CUDA
+        kdtreeSurroundingKeyPoses.nearestKSearch(surroundingKeyPosesDS->points, 1, pointSearchInd, pointSearchSqDis);
+        for (size_t i = 0; i < surroundingKeyPosesDS->points.size(); i++)
+            surroundingKeyPosesDS->points[i] = cloudKeyPoses3D->points[pointSearchInd[i][0]].intensity;
+#else
         for (auto& pt : surroundingKeyPosesDS->points)
         {
             kdtreeSurroundingKeyPoses.nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
             pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
         }
+
+#endif
 
         // also extract some latest key frames in case the robot rotates in one position
         int numPoses = cloudKeyPoses3D->size();
@@ -1111,16 +1178,40 @@ class mapOptimization : public ParamServer
     {
         updatePointAssociateToMap();
 
+#ifdef FLANN_USE_CUDA
+        std::vector<PointType> points_Sel((size_t)laserCloudSurfLastDSNum);
+#pragma omp parallel for num_threads(numberOfCores)
+        for (int i = 0; i < laserCloudSurfLastDSNum; i++)
+        {
+            PointType pointOri;
+
+            pointOri = laserCloudSurfLastDS->points[i];
+            pointAssociateToMap(&pointOri, &points_Sel[i]);
+        }
+
+        std::vector<std::vector<int>> pointSearchIndices;
+        std::vector<std::vector<float>> pointSearchSqDistances;
+        kdtreeSurfFromMap.nearestKSearch(points_Sel, 5, pointSearchIndices, pointSearchSqDistances);
+#endif
+
 #pragma omp parallel for num_threads(numberOfCores)
         for (int i = 0; i < laserCloudSurfLastDSNum; i++)
         {
             PointType pointOri, pointSel, coeff;
+
+#ifdef FLANN_USE_CUDA
+            pointOri = laserCloudSurfLastDS->points[i];
+            pointSel = points_Sel[i];
+            std::vector<int> pointSearchInd = pointSearchIndices[i];
+            std::vector<float> pointSearchSqDis = pointSearchSqDistances[i];
+#else
             std::vector<int> pointSearchInd;
             std::vector<float> pointSearchSqDis;
 
             pointOri = laserCloudSurfLastDS->points[i];
             pointAssociateToMap(&pointOri, &pointSel);
             kdtreeSurfFromMap.nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+#endif
 
             Eigen::Matrix<float, 5, 3> matA0;
             Eigen::Matrix<float, 5, 1> matB0;
@@ -1612,7 +1703,7 @@ class mapOptimization : public ParamServer
         thisPose6D.yaw = latestEstimate.rotation().yaw();
         thisPose6D.time = timeLaserInfoCur;
         cloudKeyPoses6D->push_back(thisPose6D);
-        poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size()-1);
+        poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size() - 1);
         // cout << "****************************************************" << endl;
         // cout << "Pose covariance:" << endl;
         // cout << poseCovariance << endl << endl;
@@ -1707,13 +1798,13 @@ class mapOptimization : public ParamServer
         pubLaserOdometryGlobal->publish(laserOdometryROS);
         publishPoseWithCovariance(pubMapPose, laserOdometryROS.pose, timeLaserInfoStamp, mapFrame);
 
-        // we will let the rest of the stack handle the tranforms        
+        // we will let the rest of the stack handle the tranforms
         // Publish TF
         // quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
-        // tf2::Transform t_odom_to_lidar = tf2::Transform(quat_tf, tf2::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]));
-        // tf2::TimePoint time_point = tf2_ros::fromRclcpp(timeLaserInfoStamp);
-        // tf2::Stamped<tf2::Transform> temp_odom_to_lidar(t_odom_to_lidar, time_point, mapFrame);
-        // geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
+        // tf2::Transform t_odom_to_lidar = tf2::Transform(quat_tf, tf2::Vector3(transformTobeMapped[3],
+        // transformTobeMapped[4], transformTobeMapped[5])); tf2::TimePoint time_point =
+        // tf2_ros::fromRclcpp(timeLaserInfoStamp); tf2::Stamped<tf2::Transform> temp_odom_to_lidar(t_odom_to_lidar,
+        // time_point, mapFrame); geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
         // tf2::convert(temp_odom_to_lidar, trans_odom_to_lidar);
         // trans_odom_to_lidar.child_frame_id = lidarFrame;
         // br->sendTransform(trans_odom_to_lidar);
@@ -1789,7 +1880,7 @@ class mapOptimization : public ParamServer
         {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
-            *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
+            *cloudOut += *transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
             publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, mapFrame);
         }
         // publish registered high-res raw cloud
@@ -1798,7 +1889,7 @@ class mapOptimization : public ParamServer
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
-            *cloudOut = *transformPointCloud(cloudOut,  &thisPose6D);
+            *cloudOut = *transformPointCloud(cloudOut, &thisPose6D);
             publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, mapFrame);
         }
         // publish path
@@ -1819,8 +1910,8 @@ class mapOptimization : public ParamServer
                 // pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
                 // *cloudOut += *laserCloudSurfLastDS;
                 // slamInfo.key_frame_cloud = publishCloud(ros::Publisher(), cloudOut, timeLaserInfoStamp, lidarFrame);
-                // slamInfo.key_frame_poses = publishCloud(ros::Publisher(), cloudKeyPoses6D, timeLaserInfoStamp, mapFrame);
-                // pcl::PointCloud<PointType>::Ptr localMapOut(new pcl::PointCloud<PointType>());
+                // slamInfo.key_frame_poses = publishCloud(ros::Publisher(), cloudKeyPoses6D, timeLaserInfoStamp,
+                // mapFrame); pcl::PointCloud<PointType>::Ptr localMapOut(new pcl::PointCloud<PointType>());
                 // *localMapOut += *laserCloudSurfFromMapDS;
                 // slamInfo.key_frame_map = publishCloud(ros::Publisher(), localMapOut, timeLaserInfoStamp, mapFrame);
                 // pubSLAMInfo.publish(slamInfo);
