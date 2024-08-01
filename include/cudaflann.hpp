@@ -5,6 +5,8 @@
 
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <vector>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -64,6 +66,21 @@ class KdTreeFLANN
 
         thrust::device_vector<float4> query_device = query_host;
 
+        return nearestKSearch(query_device, neighbors, indices, sqrDist);
+    }
+
+    /*
+    Search for the nearest neighbor for "N" Points
+    [in] query_device - in device vector to query
+    [in] neighbors - Number of neighbors to search
+    [out] indices - Pointer to flann::Matrix for the indices of the nearest point
+    [out] sqrDist - Pointer to flann::Matrix for the squared distances to the nearest point
+    [return] - Number of nearest neighbor results. It should be equal to neighbors
+    */
+    int nearestKSearch(thrust::device_vector<float4>& query_device, int neighbors,
+                       std::vector<std::vector<int>>& indices, std::vector<std::vector<float>>& sqrDist)
+    {
+        size_t noOfPts = query_device.size();
         flann::Matrix<float> query_device_matrix((float*)thrust::raw_pointer_cast(&query_device[0]), noOfPts, 3, 4 * 4);
 
         thrust::host_vector<int> indices_temp(noOfPts * neighbors);
@@ -185,6 +202,42 @@ class KdTreeFLANN
 };
 
 }  // namespace cudaflann
+
+struct PointAssociateToMapFunctor
+{
+    const float Cxx, Cxy, Cxz, Tx;
+    const float Cyx, Cyy, Cyz, Ty;
+    const float Czx, Czy, Czz, Tz;
+
+    PointAssociateToMapFunctor(Eigen::Affine3f transformation)
+        : Cxx(transformation(0, 0))
+        , Cxy(transformation(0, 1))
+        , Cxz(transformation(0, 2))
+        , Tx(transformation(0, 3))
+        , Cyx(transformation(1, 0))
+        , Cyy(transformation(1, 1))
+        , Cyz(transformation(1, 2))
+        , Ty(transformation(1, 3))
+        , Czx(transformation(2, 0))
+        , Czy(transformation(2, 1))
+        , Czz(transformation(2, 2))
+        , Tz(transformation(2, 3))
+    {
+    }
+
+    __device__ float4 operator()(const float4& pi_) const
+    {
+        float4 po_;
+        po_.x = Cxx * pi_.x + Cxy * pi_.y + Cxz * pi_.z + Tx;
+        po_.y = Cyx * pi_.x + Cyy * pi_.y + Cyz * pi_.z + Ty;
+        po_.z = Czx * pi_.x + Czy * pi_.y + Czz * pi_.z + Tz;
+        po_.w = pi_.w;
+        return po_;
+    }
+};
+
+void apply_transforms(thrust::device_vector<float4>& input, thrust::device_vector<float4>& output,
+                      Eigen::Affine3f& transformation);
 
 #endif  // KD_TREE_CUDA_HPP_
 #endif  // FLANN_USE_CUDA

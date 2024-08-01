@@ -83,7 +83,7 @@ if (BUILD_CUDA_LIB)
   find_package(CUDA REQUIRED)
   include_directories(${CUDA_INCLUDE_DIRS})
   link_directories(${CUDA_LIBRARY_DIRS})
-  add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp ${common_lib})
+  cuda_add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp src/cudaflann.cu ${common_lib})
 
   if(CUDA_FOUND)
     SET(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};-DFLANN_USE_CUDA;-Xcudafe \"--diag_suppress=partial_override\" ;-gencode=arch=compute_52,code=\"sm_52,compute_52\";-gencode=arch=compute_61,code=\"sm_61,compute_61\"")
