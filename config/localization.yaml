@@ -121,3 +121,4 @@
     mappingLmConvergenceTrans: 0.05
     mappingLmConvergenceRot: 0.05
     mappingProcessingTimeoutMs: 200
+    maxNumOptimizationIterations: 24
