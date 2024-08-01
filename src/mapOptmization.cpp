@@ -267,6 +267,7 @@ public:
     // add by yjz_lucky_boy
     void initialposeHandler(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msgIn) 
     {
+        publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);
         tf2::Quaternion q(msgIn->pose.pose.orientation.x, msgIn->pose.pose.orientation.y, 
                             msgIn->pose.pose.orientation.z, msgIn->pose.pose.orientation.w);
         tf2::Matrix3x3 qm(q);

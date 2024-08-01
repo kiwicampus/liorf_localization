@@ -26,6 +26,8 @@ def generate_launch_description():
     )
 
     local_launch = bool(int(os.getenv("LOCAL_LAUNCH", 0)))
+    respawn_nodes = bool(int(os.getenv(key="RESPAWN_NODES", default=1)))
+    respawn_delay = float(os.getenv(key="RESPAWN_DELAY", default=5))
 
     if local_launch:
         os.environ["LIDAR_LOCALIZATION"] = '1'
@@ -39,6 +41,8 @@ def generate_launch_description():
             name="liorf_localization_imageProjection",
             parameters=[parameter_file],
             output="screen",
+            respawn=respawn_nodes,
+            respawn_delay=respawn_delay,
         ),
         Node(
             package="liorf_localization",
@@ -47,6 +51,8 @@ def generate_launch_description():
             parameters=[parameter_file],
             # prefix=["valgrind --tool=callgrind --instr-atstart=no"],
             output="screen",
+            respawn=respawn_nodes,
+            respawn_delay=respawn_delay,
         ),
         Node(
             package="livox_imu_scaler",
@@ -54,6 +60,8 @@ def generate_launch_description():
             name="livox_imu_scaler",
             parameters=[parameter_file],
             output="screen",
+            respawn=respawn_nodes,
+            respawn_delay=respawn_delay,
         ),
         Node(
             package="imu_complementary_filter",
@@ -64,14 +72,18 @@ def generate_launch_description():
                 ('/imu/data', '/imu/data_livox')
             ],
             output="screen",
+            respawn=respawn_nodes,
+            respawn_delay=respawn_delay,
         ),
         Node(
-                package="liorf_localization",
-                executable="liorf_localization_wheelOdomPreintegration",
-                name="liorf_localization_wheelOdomPreintegration",
-                parameters=[parameter_file],
-                output="screen",
-            ),
+            package="liorf_localization",
+            executable="liorf_localization_wheelOdomPreintegration",
+            name="liorf_localization_wheelOdomPreintegration",
+            parameters=[parameter_file],
+            output="screen",
+            respawn=respawn_nodes,
+            respawn_delay=respawn_delay,
+        ),
     ]
 
     if local_launch:
