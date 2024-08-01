@@ -1473,8 +1473,9 @@ class mapOptimization : public ParamServer
 #ifdef FLANN_USE_CUDA
             thrust::host_vector<float4> points_Ori_h(laserCloudSurfLastDSNum);
             std::transform(laserCloudSurfLastDS->points.begin(), laserCloudSurfLastDS->points.end(),
-                           points_Ori_h.begin(),
-                           [=](PointType point) { return make_float4(point.x, point.y, point.z, 0); });
+                           points_Ori_h.begin(), [=](PointType point) -> float4 {
+                               return {point.x, point.y, point.z, 0};
+                           });
             thrust::device_vector<float4> points_Ori_d = points_Ori_h;
 #endif
             // kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);

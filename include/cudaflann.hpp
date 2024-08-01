@@ -3,13 +3,11 @@
 #ifndef KD_TREE_CUDA_HPP_
 #define KD_TREE_CUDA_HPP_
 
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 #include <vector>
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
 #include "flann/flann.h"
 
 namespace cudaflann {
@@ -34,8 +32,9 @@ class KdTreeFLANN
         size_t noOfPts = inCloud->size();
         thrust::host_vector<float4> cloudHostThrust(noOfPts);
 
-        std::transform(inCloud->begin(), inCloud->end(), cloudHostThrust.begin(),
-                       [](PointType point) { return make_float4(point.x, point.y, point.z, 0); });
+        std::transform(inCloud->begin(), inCloud->end(), cloudHostThrust.begin(), [](PointType point) -> float4 {
+            return {point.x, point.y, point.z, 0};
+        });
 
         thrust::device_vector<float4> cldDevice = cloudHostThrust;
 
@@ -61,8 +60,9 @@ class KdTreeFLANN
     {
         size_t noOfPts = inQuery.size();
         thrust::host_vector<float4> query_host(noOfPts);
-        std::transform(inQuery.begin(), inQuery.end(), query_host.begin(),
-                       [=](PointType point) { return make_float4(point.x, point.y, point.z, 0); });
+        std::transform(inQuery.begin(), inQuery.end(), query_host.begin(), [=](PointType point) -> float4 {
+            return {point.x, point.y, point.z, 0};
+        });
 
         thrust::device_vector<float4> query_device = query_host;
 
@@ -135,8 +135,9 @@ class KdTreeFLANN
     {
         size_t noOfPts = inQuery.size();
         thrust::host_vector<float4> query_host(noOfPts);
-        std::transform(inQuery.begin(), inQuery.end(), query_host.begin(),
-                       [=](PointType point) { return make_float4(point.x, point.y, point.z, 0); });
+        std::transform(inQuery.begin(), inQuery.end(), query_host.begin(), [=](PointType point) -> float4 {
+            return {point.x, point.y, point.z, 0};
+        });
 
         thrust::device_vector<float4> query_device = query_host;
 
