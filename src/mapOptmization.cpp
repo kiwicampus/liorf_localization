@@ -1479,8 +1479,7 @@ class mapOptimization : public ParamServer
             thrust::device_vector<float4> points_Ori_d = points_Ori_h;
 #endif
             // kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
-
-            for (int iterCount = 0; iterCount < 30; iterCount++)
+            for (int iterCount = 0; iterCount < static_cast<int>(maxNumOptimizationIterations); iterCount++)
             {
                 laserCloudOri->clear();
                 coeffSel->clear();

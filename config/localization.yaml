@@ -86,7 +86,7 @@
     rotation_tollerance: 1000.0                     # radians
 
     # CPU Params
-    numberOfCores: 1                              # number of cores for mapping optimization
+    numberOfCores: 8                              # number of cores for mapping optimization
     mappingProcessInterval: 0.2                  # seconds, regulate mapping frequency
 
     # Surrounding map
@@ -121,3 +121,4 @@
     mappingLmConvergenceTrans: 0.05
     mappingLmConvergenceRot: 0.05
     mappingProcessingTimeoutMs: 200
+    maxNumOptimizationIterations: 24
