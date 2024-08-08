@@ -118,7 +118,7 @@
     mappingGpsCovariance: 0.01
     mappingGpsAddingDist: 0.3
     
-    mappingLmConvergenceTrans: 0.05
-    mappingLmConvergenceRot: 0.05
+    mappingLmConvergenceTrans: 0.07
+    mappingLmConvergenceRot: 0.07
     mappingProcessingTimeoutMs: 200
     maxNumOptimizationIterations: 24
