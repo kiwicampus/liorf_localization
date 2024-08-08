@@ -1,17 +1,27 @@
 import os
+import time
+import subprocess
+import threading
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, IncludeLaunchDescription
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, EqualsSubstitution
-from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+from launch.events.process.process_started import ProcessStarted
+from launch.event_handlers.on_process_start import OnProcessStart
+from launch.actions import RegisterEventHandler
+from launch.launch_context import LaunchContext
 
 def generate_launch_description():
     share_dir = get_package_share_directory("liorf_localization")
     parameter_file = LaunchConfiguration("params_file")
     rviz_config_file = os.path.join(share_dir, "rviz", "localization.rviz")
     use_rviz = LaunchConfiguration("use_rviz")
+    scale_livox_imu = LaunchConfiguration("scale_livox_imu")
 
     params_declare = DeclareLaunchArgument(
         "params_file",
@@ -25,6 +35,15 @@ def generate_launch_description():
         description="Whether to launch RViz"
     )
 
+    # in case your data comes from an unmodified livox wrapper, which outputs acceleration in `g`
+    # set this to true to launch a node to scale times the gravity. if you already have the latest
+    # version, leave it false as the default
+    livox_scale_imu_declare = DeclareLaunchArgument(
+        "scale_livox_imu",
+        default_value="false",
+        description="Whether to scale the livox imu times the gravity"
+    )
+
     local_launch = bool(int(os.getenv("LOCAL_LAUNCH", 0)))
     respawn_nodes = bool(int(os.getenv(key="RESPAWN_NODES", default=1)))
     respawn_delay = float(os.getenv(key="RESPAWN_DELAY", default=5))
@@ -35,6 +54,7 @@ def generate_launch_description():
     launch_description = [
         params_declare,
         rviz_declare,
+        livox_scale_imu_declare,
         Node(
             package="liorf_localization",
             executable="liorf_localization_imageProjection",
@@ -49,28 +69,6 @@ def generate_launch_description():
             executable="liorf_localization_mapOptmization",
             name="liorf_localization_mapOptmization",
             parameters=[parameter_file],
-            # prefix=["valgrind --tool=callgrind --instr-atstart=no"],
-            output="screen",
-            respawn=respawn_nodes,
-            respawn_delay=respawn_delay,
-        ),
-        Node(
-            package="livox_imu_scaler",
-            executable="livox_imu_scaler",
-            name="livox_imu_scaler",
-            parameters=[parameter_file],
-            output="screen",
-            respawn=respawn_nodes,
-            respawn_delay=respawn_delay,
-        ),
-        Node(
-            package="imu_complementary_filter",
-            executable="complementary_filter_node",
-            name="complementary_filter_node",
-            parameters=[parameter_file],
-            remappings=[
-                ('/imu/data', '/imu/data_livox')
-            ],
             output="screen",
             respawn=respawn_nodes,
             respawn_delay=respawn_delay,
@@ -86,6 +84,53 @@ def generate_launch_description():
         ),
     ]
 
+    if_condition = IfCondition(scale_livox_imu)
+    unless_condition = UnlessCondition(scale_livox_imu)
+
+    livox_imu_scaler_node = Node(
+        package="livox_imu_scaler",
+        executable="livox_imu_scaler",
+        name="livox_imu_scaler",
+        parameters=[parameter_file],
+        output="screen",
+        respawn=respawn_nodes,
+        respawn_delay=respawn_delay,
+        condition=if_condition,
+    )
+
+    complementary_filter_w_scaler = Node(
+        package="imu_complementary_filter",
+        executable="complementary_filter_node",
+        name="complementary_filter_node",
+        parameters=[parameter_file],
+        remappings=[
+            ('/imu/data', '/imu/data_livox')
+        ],
+        output="screen",
+        respawn=respawn_nodes,
+        respawn_delay=respawn_delay,
+        condition=if_condition,
+    )
+
+    complementary_filter_wo_scaler = Node(
+        package="imu_complementary_filter",
+        executable="complementary_filter_node",
+        name="complementary_filter_node",
+        parameters=[parameter_file],
+        remappings=[
+            ('/imu/data', '/imu/data_livox'),
+            ('/imu/data_raw', '/livox/imu')
+        ],
+        output="screen",
+        respawn=respawn_nodes,
+        respawn_delay=respawn_delay,
+        condition=unless_condition,
+    )
+
+    launch_description.append(livox_imu_scaler_node)
+    launch_description.append(complementary_filter_w_scaler)
+    launch_description.append(complementary_filter_wo_scaler)
+
     if local_launch:
         launch_description.append(SetEnvironmentVariable('LIDAR_LOCALIZATION', '1'))
         launch_description.append(Node(
@@ -95,31 +140,46 @@ def generate_launch_description():
             arguments=['-d', rviz_config_file],
             output='screen'
         ))
-        Node(
+        launch_description.append(Node(
             package="tf2_ros",
             executable="static_transform_publisher",
             name="static_transform_publisher",
             arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "livox_link"],
             output="screen",
-        ),
-        Node(
+        ))
+        launch_description.append(Node(
             package="tf2_ros",
             executable="static_transform_publisher",
             name="static_transform_publisher",
-            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "laser_link"],
+            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "livox_frame"],
             output="screen",
-        ),
-        Node(
+        ))
+        launch_description.append(Node(
             package="tf2_ros",
             executable="static_transform_publisher",
             name="static_transform_publisher",
             arguments=["0", "0", "0", "0", "0", "0", "base_link", "gps"],
             output="screen",
-        ),
+        ))
         launch_description.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('location'), 'launch', 'robot_localization.launch.py')]),
         ))
 
-    return LaunchDescription(launch_description)
+    def reniceness_execute():
+        time.sleep(10)
+        print(f"Renicing map optimization node in localization")
+        cmd = "ps -eLf | grep 'liorf_mapOptmization' | grep -v grep | awk '{print $4}' | xargs -r -n1 renice -20 -p"
+        subprocess.call(cmd, shell=True)
 
+    def reniceness_map_optimization(event: ProcessStarted, context: LaunchContext):
+        # Start a new thread to run the command
+        threading.Thread(target=reniceness_execute).start()
+    
+    reniceness_map_optimization_event_handler = RegisterEventHandler(
+        event_handler=OnProcessStart(on_start=reniceness_map_optimization)
+    )
+
+    launch_description.append(reniceness_map_optimization_event_handler)
+
+    return LaunchDescription(launch_description)
