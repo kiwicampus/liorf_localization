@@ -16,7 +16,7 @@
 #include "utility.h"
 
 #ifdef FLANN_USE_CUDA
-#include "cudaflann.hpp"
+#include "cuda_utils.h"
 #else
 #include "nanoflann_pcl.h"
 #endif
@@ -1193,46 +1193,68 @@ class mapOptimization : public ParamServer
 
 #ifdef FLANN_USE_CUDA
     void surfOptimization(thrust::device_vector<float4>& points_Ori)
-#else
-    void surfOptimization()
-#endif
     {
         updatePointAssociateToMap();
-
-#ifdef FLANN_USE_CUDA
-
         thrust::device_vector<float4> points_Sel;
-        apply_transforms(points_Ori, points_Sel, transPointAssociateToMap);
+        std::vector<float> flat_tranform(12);
+        for (int row = 0; row < 3; row++)
+            for (int col = 0; col < 4; col++) flat_tranform[row * 4 + col] = transPointAssociateToMap(row, col);
+        apply_transforms(points_Ori, points_Sel, flat_tranform.data());
 
-        std::vector<std::vector<int>> pointSearchIndices;
-        std::vector<std::vector<float>> pointSearchSqDistances;
-        kdtreeSurfFromMap.nearestKSearch(points_Sel, 5, pointSearchIndices, pointSearchSqDistances);
+        thrust::host_vector<int> offsets_h;
+        int neighbors = 5;
+        kdtreeSurfFromMap.nearestKSearch(points_Sel, neighbors, offsets_h);
 
-        thrust::host_vector<float4> points_Sel_h(laserCloudSurfLastDSNum);
-        thrust::copy(points_Sel.begin(), points_Sel.end(), points_Sel_h.begin());
-#endif
+        thrust::device_vector<int> offsets = offsets_h;
 
+        thrust::device_vector<bool> valid_flag;
+        validate_distance(kdtreeSurfFromMap.sqrDists_d, offsets, valid_flag);
+        thrust::host_vector<bool> valid_flag_h = valid_flag;
+
+        thrust::device_vector<float> X0s;
+        resize_device_vector(X0s, laserCloudSurfLastDSNum * 3);
+#pragma omp parallel for num_threads(numberOfCores)
+        for (int i = 0; i < laserCloudSurfLastDSNum; i++)
+        {
+            if (!valid_flag_h[i]) continue;
+            thrust::device_vector<float> matA0;  // 5x3 matrix
+            resize_device_vector(matA0, neighbors * 3);
+            kdtreeSurfFromMap.getPointsSubmatrix(offsets_h[i], neighbors, matA0);
+
+            // 3x1 vector
+            solve_linear_system(matA0, 5, 3, X0s, i * 3);
+        }
+
+        thrust::device_vector<float4> Xs;
+        get_planes_coef(X0s, Xs, valid_flag, laserCloudSurfLastDSNum);
+
+        // Launch the kernel
+        validate_planes(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets, Xs, neighbors, valid_flag);
+
+        thrust::device_vector<float4> coeffs;
+        compute_coeffs(points_Sel, points_Ori, Xs, valid_flag, coeffs);
+
+        laserCloudOriSurfVec.assign(laserCloudSurfLastDS->points.begin(), laserCloudSurfLastDS->points.end());
+        float42PointType(coeffs, coeffSelSurfVec);
+        valid_flag_h = valid_flag;
+        std::copy(valid_flag_h.begin(), valid_flag_h.end(), laserCloudOriSurfFlag.begin());
+    }
+
+#else
+    void surfOptimization()
+    {
+        updatePointAssociateToMap();
 #pragma omp parallel for num_threads(numberOfCores)
         for (int i = 0; i < laserCloudSurfLastDSNum; i++)
         {
             PointType pointOri, pointSel, coeff;
 
-#ifdef FLANN_USE_CUDA
-            pointOri = laserCloudSurfLastDS->points[i];
-            pointSel.x = points_Sel_h[i].x;
-            pointSel.y = points_Sel_h[i].y;
-            pointSel.z = points_Sel_h[i].z;
-            pointSel.intensity = points_Sel_h[i].w;
-            std::vector<int> pointSearchInd = pointSearchIndices[i];
-            std::vector<float> pointSearchSqDis = pointSearchSqDistances[i];
-#else
             std::vector<int> pointSearchInd;
             std::vector<float> pointSearchSqDis;
 
             pointOri = laserCloudSurfLastDS->points[i];
             pointAssociateToMap(&pointOri, &pointSel);
             kdtreeSurfFromMap.nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
-#endif
 
             Eigen::Matrix<float, 5, 3> matA0;
             Eigen::Matrix<float, 5, 1> matB0;
@@ -1299,6 +1321,7 @@ class mapOptimization : public ParamServer
             }
         }
     }
+#endif
 
     void combineOptimizationCoeffs()
     {

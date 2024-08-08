@@ -81,9 +81,10 @@ target_link_libraries(${PROJECT_NAME}_imageProjection "${cpp_typesupport_target}
 # # Mapping Optimization
 if (BUILD_CUDA_LIB)
   find_package(CUDA REQUIRED)
+
   include_directories(${CUDA_INCLUDE_DIRS})
   link_directories(${CUDA_LIBRARY_DIRS})
-  cuda_add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp src/cudaflann.cu ${common_lib})
+  cuda_add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp src/cuda_utils.cu ${common_lib})
 
   if(CUDA_FOUND)
     SET(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS};-DFLANN_USE_CUDA;-Xcudafe \"--diag_suppress=partial_override\" ;-gencode=arch=compute_52,code=\"sm_52,compute_52\";-gencode=arch=compute_61,code=\"sm_61,compute_61\"")
@@ -98,7 +99,7 @@ if (BUILD_CUDA_LIB)
 
     set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY CUDA_ARCHITECTURES "72;86")
     set_property(TARGET ${PROJECT_NAME}_mapOptimization PROPERTY COMPILE_DEFINITIONS FLANN_USE_CUDA)
-    target_link_libraries(${PROJECT_NAME}_mapOptimization ${CUDA_LIBRARIES} flann::flann_cuda)
+    target_link_libraries(${PROJECT_NAME}_mapOptimization ${CUDA_LIBRARIES} flann::flann_cuda ${CUDA_cusolver_LIBRARY})
   else()
     message(WARNING "CUDA not found :c, CUDA library will not be built")
   endif()

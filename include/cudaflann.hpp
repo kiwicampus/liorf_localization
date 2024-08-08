@@ -18,6 +18,7 @@ class KdTreeFLANN
    public:
     thrust::device_vector<int> indices_d;
     thrust::device_vector<float> sqrDists_d;
+    thrust::device_vector<float4> cldDevice;
     /*
     Pointer to the CUDA KD Index
     */
@@ -36,7 +37,7 @@ class KdTreeFLANN
             return {point.x, point.y, point.z, 0};
         });
 
-        thrust::device_vector<float4> cldDevice = cloudHostThrust;
+        cldDevice = cloudHostThrust;
 
         flann::Matrix<float> data_device_matrix((float*)thrust::raw_pointer_cast(&cldDevice[0]), noOfPts, 3, 4 * 4);
 
@@ -77,8 +78,41 @@ class KdTreeFLANN
     [out] sqrDist - Pointer to flann::Matrix for the squared distances to the nearest point
     [return] - Number of nearest neighbor results. It should be equal to neighbors
     */
+    int nearestKSearch(thrust::device_vector<float4>& query_device, int neighbors, thrust::host_vector<int>& offset)
+    {
+        int result = computeNearestKSearch(query_device, neighbors);
+        offset.resize(query_device.size());
+        for (size_t i = 0; i < query_device.size(); i++) offset[i] = i * neighbors;
+
+        return result;
+    }
+
     int nearestKSearch(thrust::device_vector<float4>& query_device, int neighbors,
                        std::vector<std::vector<int>>& indices, std::vector<std::vector<float>>& sqrDist)
+    {
+        int result = computeNearestKSearch(query_device, neighbors);
+        std::vector<int> indices_flat(this->indices_d.size());
+        std::vector<float> sqrDist_flat(this->sqrDists_d.size());
+
+        thrust::copy(this->indices_d.begin(), this->indices_d.end(), indices_flat.data());
+        thrust::copy(this->sqrDists_d.begin(), this->sqrDists_d.end(), sqrDist_flat.data());
+
+        size_t noOfPts = query_device.size();
+        indices.resize(noOfPts);
+        sqrDist.resize(noOfPts);
+
+        for (size_t i = 0; i < noOfPts; i++)
+        {
+            auto row_iterator_indices = indices_flat.begin() + i * neighbors;
+            auto row_iterator_sqrDist = sqrDist_flat.begin() + i * neighbors;
+            indices[i].assign(row_iterator_indices, row_iterator_indices + neighbors);
+            sqrDist[i].assign(row_iterator_sqrDist, row_iterator_sqrDist + neighbors);
+        }
+
+        return result;
+    }
+
+    int computeNearestKSearch(thrust::device_vector<float4>& query_device, int neighbors)
     {
         size_t noOfPts = query_device.size();
         flann::Matrix<float> query_device_matrix((float*)thrust::raw_pointer_cast(&query_device[0]), noOfPts, 3, 4 * 4);
@@ -96,27 +130,7 @@ class KdTreeFLANN
 
         flann::SearchParams sp;
         sp.matrices_in_gpu_ram = true;
-        int result =
-            this->kdIndex->knnSearch(query_device_matrix, indices_device_matrix, dists_device_matrix, neighbors, sp);
-
-        std::vector<int> indices_flat(noOfPts * neighbors);
-        std::vector<float> sqrDist_flat(noOfPts * neighbors);
-
-        thrust::copy(this->indices_d.begin(), this->indices_d.end(), indices_flat.data());
-        thrust::copy(this->sqrDists_d.begin(), this->sqrDists_d.end(), sqrDist_flat.data());
-
-        indices.resize(noOfPts);
-        sqrDist.resize(noOfPts);
-
-        for (size_t i = 0; i < noOfPts; i++)
-        {
-            auto row_iterator_indices = indices_flat.begin() + i * neighbors;
-            auto row_iterator_sqrDist = sqrDist_flat.begin() + i * neighbors;
-            indices[i].assign(row_iterator_indices, row_iterator_indices + neighbors);
-            sqrDist[i].assign(row_iterator_sqrDist, row_iterator_sqrDist + neighbors);
-        }
-
-        return result;
+        return this->kdIndex->knnSearch(query_device_matrix, indices_device_matrix, dists_device_matrix, neighbors, sp);
     }
 
     /*
@@ -200,45 +214,21 @@ class KdTreeFLANN
     Returns the pointer to the thrust device vector for Squared Distances
     */
     PointType* getSqrtDistDevicePtr() { return (float*)thrust::raw_pointer_cast(&this->sqrDists_d[0]); }
+
+    void getPointsSubmatrix(int offset, int neighbors, thrust::device_vector<float>& matA)
+    {
+        for (size_t j = 0; j < neighbors; j++)
+        {
+            int index;
+            thrust::copy(indices_d.begin() + offset + j, indices_d.begin() + offset + j + 1, &index);
+            auto raw_point_pointer = (float*)thrust::raw_pointer_cast(&this->cldDevice[index]);
+
+            auto row_iterator = matA.begin() + j * 3;
+            thrust::copy(raw_point_pointer, raw_point_pointer + 3, row_iterator);
+        }
+    }
 };
 
 }  // namespace cudaflann
-
-struct PointAssociateToMapFunctor
-{
-    const float Cxx, Cxy, Cxz, Tx;
-    const float Cyx, Cyy, Cyz, Ty;
-    const float Czx, Czy, Czz, Tz;
-
-    PointAssociateToMapFunctor(Eigen::Affine3f transformation)
-        : Cxx(transformation(0, 0))
-        , Cxy(transformation(0, 1))
-        , Cxz(transformation(0, 2))
-        , Tx(transformation(0, 3))
-        , Cyx(transformation(1, 0))
-        , Cyy(transformation(1, 1))
-        , Cyz(transformation(1, 2))
-        , Ty(transformation(1, 3))
-        , Czx(transformation(2, 0))
-        , Czy(transformation(2, 1))
-        , Czz(transformation(2, 2))
-        , Tz(transformation(2, 3))
-    {
-    }
-
-    __device__ float4 operator()(const float4& pi_) const
-    {
-        float4 po_;
-        po_.x = Cxx * pi_.x + Cxy * pi_.y + Cxz * pi_.z + Tx;
-        po_.y = Cyx * pi_.x + Cyy * pi_.y + Cyz * pi_.z + Ty;
-        po_.z = Czx * pi_.x + Czy * pi_.y + Czz * pi_.z + Tz;
-        po_.w = pi_.w;
-        return po_;
-    }
-};
-
-void apply_transforms(thrust::device_vector<float4>& input, thrust::device_vector<float4>& output,
-                      Eigen::Affine3f& transformation);
-
 #endif  // KD_TREE_CUDA_HPP_
 #endif  // FLANN_USE_CUDA
