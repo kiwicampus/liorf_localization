@@ -4,6 +4,48 @@
 
 void resize_device_vector(thrust::device_vector<float>& vector, size_t v_size) { vector.resize(v_size); }
 
+/*! Functor to apply a transformation in GPU using thrust::transform
+ */
+struct PointAssociateToMapFunctor
+{
+    const float Cxx, Cxy, Cxz, Tx;
+    const float Cyx, Cyy, Cyz, Ty;
+    const float Czx, Czy, Czz, Tz;
+
+    PointAssociateToMapFunctor(const std::vector<float>& transformation)
+        : Cxx(transformation[0])
+        , Cxy(transformation[1])
+        , Cxz(transformation[2])
+        , Tx(transformation[3])
+        , Cyx(transformation[4])
+        , Cyy(transformation[5])
+        , Cyz(transformation[6])
+        , Ty(transformation[7])
+        , Czx(transformation[8])
+        , Czy(transformation[9])
+        , Czz(transformation[10])
+        , Tz(transformation[11])
+    {
+    }
+
+    __device__ float4 operator()(const float4& pi_) const
+    {
+        float4 po_;
+        po_.x = Cxx * pi_.x + Cxy * pi_.y + Cxz * pi_.z + Tx;
+        po_.y = Cyx * pi_.x + Cyy * pi_.y + Cyz * pi_.z + Ty;
+        po_.z = Czx * pi_.x + Czy * pi_.y + Czz * pi_.z + Tz;
+        po_.w = pi_.w;
+        return po_;
+    }
+};
+
+void apply_transforms(const thrust::device_vector<float4>& input, const std::vector<float>& transformation,
+                      thrust::device_vector<float4>& output)
+{
+    output.resize(input.size());
+    thrust::transform(input.begin(), input.end(), output.begin(), PointAssociateToMapFunctor(transformation));
+}
+
 struct ValidateDistanceFunctor
 {
     const float* distance;
@@ -175,14 +217,10 @@ struct ValidatePlanesFunctor
 };
 
 // Function to perform the transformation using Thrust
-void validate_planes(thrust::device_vector<float4> cldDevice, thrust::device_vector<int>& indices_d,
-                     thrust::device_vector<int>& offsets, thrust::device_vector<float4>& Xs, int neighbors,
+void validate_planes(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
+                     const thrust::device_vector<int>& offsets, const thrust::device_vector<float4>& Xs, int neighbors,
                      thrust::device_vector<bool>& valid_flag)
 {
-    // Ensure that the flag vector has the correct size
-    valid_flag.resize(Xs.size());
-
-    // Apply the transformation using Thrust
     thrust::transform(
         thrust::make_zip_iterator(
             thrust::make_tuple(Xs.begin(), thrust::counting_iterator<int>(0), valid_flag.begin())),
@@ -195,8 +233,7 @@ void validate_planes(thrust::device_vector<float4> cldDevice, thrust::device_vec
 
 struct compute_coeffs_functor
 {
-    __host__ __device__ thrust::tuple<float4, bool> operator()(
-        const thrust::tuple<float4, float4, float4, bool>& t) const
+    __device__ thrust::tuple<float4, bool> operator()(const thrust::tuple<float4, float4, float4, bool>& t) const
     {
         float4 points_Sel = thrust::get<0>(t);
         float4 points_Ori = thrust::get<1>(t);

@@ -1192,25 +1192,25 @@ class mapOptimization : public ParamServer
     void updatePointAssociateToMap() { transPointAssociateToMap = trans2Affine3f(transformTobeMapped); }
 
 #ifdef FLANN_USE_CUDA
-    void surfOptimization(thrust::device_vector<float4>& points_Ori)
+    void surfOptimization(const thrust::device_vector<float4>& points_Ori)
     {
         updatePointAssociateToMap();
         thrust::device_vector<float4> points_Sel;
         std::vector<float> flat_tranform(12);
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 4; col++) flat_tranform[row * 4 + col] = transPointAssociateToMap(row, col);
-        apply_transforms(points_Ori, points_Sel, flat_tranform);
+        apply_transforms(points_Ori, flat_tranform, points_Sel);
 
         thrust::host_vector<int> offsets_h;
         int neighbors = 5;
         kdtreeSurfFromMap.nearestKSearch(points_Sel, neighbors, offsets_h);
-
         thrust::device_vector<int> offsets = offsets_h;
 
         thrust::device_vector<bool> valid_flag;
         validate_distance(kdtreeSurfFromMap.sqrDists_d, offsets, valid_flag);
         thrust::host_vector<bool> valid_flag_h;
         copy_to_host(valid_flag, valid_flag_h);
+
         thrust::device_vector<float> X0s;
         resize_device_vector(X0s, laserCloudSurfLastDSNum * 3);
 #pragma omp parallel for num_threads(numberOfCores)
@@ -1221,14 +1221,12 @@ class mapOptimization : public ParamServer
             get_points_submatrix(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets_h[i], neighbors,
                                  matA0);
 
-            // 3x1 vector
             solve_linear_system(matA0, 5, 3, X0s, i * 3);
         }
 
         thrust::device_vector<float4> Xs;
         get_planes_coef(X0s, Xs, valid_flag, laserCloudSurfLastDSNum);
 
-        // Launch the kernel
         validate_planes(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets, Xs, neighbors, valid_flag);
 
         thrust::device_vector<float4> coeffs;
@@ -1501,7 +1499,7 @@ class mapOptimization : public ParamServer
 #ifdef FLANN_USE_CUDA
             thrust::host_vector<float4> points_Ori_h(laserCloudSurfLastDSNum);
             std::transform(laserCloudSurfLastDS->points.begin(), laserCloudSurfLastDS->points.end(),
-                           points_Ori_h.begin(), [=](PointType point) -> float4 {
+                           points_Ori_h.begin(), [](PointType point) -> float4 {
                                return {point.x, point.y, point.z, 0};
                            });
             thrust::device_vector<float4> points_Ori_d = points_Ori_h;

@@ -17,47 +17,13 @@
 */
 void resize_device_vector(thrust::device_vector<float>& vector, size_t v_size);
 
-/*! Functor to apply a transformation in GPU using thrust::transform
- */
-struct PointAssociateToMapFunctor
-{
-    const float Cxx, Cxy, Cxz, Tx;
-    const float Cyx, Cyy, Cyz, Ty;
-    const float Czx, Czy, Czz, Tz;
-
-    PointAssociateToMapFunctor(std::vector<float> transformation)
-        : Cxx(transformation[0])
-        , Cxy(transformation[1])
-        , Cxz(transformation[2])
-        , Tx(transformation[3])
-        , Cyx(transformation[4])
-        , Cyy(transformation[5])
-        , Cyz(transformation[6])
-        , Ty(transformation[7])
-        , Czx(transformation[8])
-        , Czy(transformation[9])
-        , Czz(transformation[10])
-        , Tz(transformation[11])
-    {
-    }
-
-    __device__ float4 operator()(const float4& pi_) const
-    {
-        float4 po_;
-        po_.x = Cxx * pi_.x + Cxy * pi_.y + Cxz * pi_.z + Tx;
-        po_.y = Cyx * pi_.x + Cyy * pi_.y + Cyz * pi_.z + Ty;
-        po_.z = Czx * pi_.x + Czy * pi_.y + Czz * pi_.z + Tz;
-        po_.w = pi_.w;
-        return po_;
-    }
-};
-
 /*! Wrapper to call apply transformation from a cpp file
-@param input original vector
-@param output transformed vector
+    @param input original vector
+    @param output transformed vector
+    @param transformation matrix as a flat array
 */
-void apply_transforms(thrust::device_vector<float4>& input, thrust::device_vector<float4>& output,
-                      std::vector<float> transformation);
+void apply_transforms(const thrust::device_vector<float4>& input, const std::vector<float>& transformation,
+                      thrust::device_vector<float4>& output);
 
 /*!
     make sure that the distances are less than 1.0
@@ -80,6 +46,13 @@ void validate_distance(const thrust::device_vector<float>& distance, const thrus
 void get_points_submatrix(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
                           int offset, int neighbors, thrust::device_vector<float>& output);
 /*!
+    Solve mysterious equation of surf optimization
+    @param A points as matrix in a flat array
+    @param m number of rows
+    @param n number of columns
+    @param X output vector
+    @param x_index ofset of where save the result
+
  */
 void solve_linear_system(thrust::device_vector<float>& A, int m, int n, thrust::device_vector<float>& X, int x_index);
 
@@ -90,8 +63,8 @@ void todo_name(const thrust::device_vector<float4>& cldDevice, const thrust::dev
 void get_planes_coef(thrust::device_vector<float>& X0s, thrust::device_vector<float4>& Xs,
                      thrust::device_vector<bool>& flagValid, size_t size_x);
 
-void validate_planes(thrust::device_vector<float4> cldDevice, thrust::device_vector<int>& indices_d,
-                     thrust::device_vector<int>& offsets, thrust::device_vector<float4>& Xs, int neighbors,
+void validate_planes(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
+                     const thrust::device_vector<int>& offsets, const thrust::device_vector<float4>& Xs, int neighbors,
                      thrust::device_vector<bool>& valid_flag);
 
 void compute_coeffs(const thrust::device_vector<float4>& points_Sel, const thrust::device_vector<float4>& points_Ori,
