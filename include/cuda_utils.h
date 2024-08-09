@@ -18,19 +18,35 @@
 void resize_device_vector(thrust::device_vector<float>& vector, size_t v_size);
 
 /*! Functor to apply a transformation in GPU using thrust::transform
-*/
+ */
 struct PointAssociateToMapFunctor
 {
-    const float* transformation;
+    const float Cxx, Cxy, Cxz, Tx;
+    const float Cyx, Cyy, Cyz, Ty;
+    const float Czx, Czy, Czz, Tz;
 
-    PointAssociateToMapFunctor(float* transformation_) : transformation(transformation_) {}
+    PointAssociateToMapFunctor(std::vector<float> transformation)
+        : Cxx(transformation[0])
+        , Cxy(transformation[1])
+        , Cxz(transformation[2])
+        , Tx(transformation[3])
+        , Cyx(transformation[4])
+        , Cyy(transformation[5])
+        , Cyz(transformation[6])
+        , Ty(transformation[7])
+        , Czx(transformation[8])
+        , Czy(transformation[9])
+        , Czz(transformation[10])
+        , Tz(transformation[11])
+    {
+    }
 
     __device__ float4 operator()(const float4& pi_) const
     {
         float4 po_;
-        po_.x = transformation[0] * pi_.x + transformation[1] * pi_.y + transformation[2] * pi_.z + transformation[3];
-        po_.y = transformation[4] * pi_.x + transformation[5] * pi_.y + transformation[6] * pi_.z + transformation[7];
-        po_.z = transformation[8] * pi_.x + transformation[9] * pi_.y + transformation[10] * pi_.z + transformation[11];
+        po_.x = Cxx * pi_.x + Cxy * pi_.y + Cxz * pi_.z + Tx;
+        po_.y = Cyx * pi_.x + Cyy * pi_.y + Cyz * pi_.z + Ty;
+        po_.z = Czx * pi_.x + Czy * pi_.y + Czz * pi_.z + Tz;
         po_.w = pi_.w;
         return po_;
     }
@@ -41,46 +57,49 @@ struct PointAssociateToMapFunctor
 @param output transformed vector
 */
 void apply_transforms(thrust::device_vector<float4>& input, thrust::device_vector<float4>& output,
-                      float* transformation);
+                      std::vector<float> transformation);
 
 /*!
-*/
-__global__ void validate_distance_kernel(const float* distance, int* offsets, bool* flag, int indices);
-
-void validate_distance(thrust::device_vector<float>& distance, thrust::device_vector<int>& offsets,
+    make sure that the distances are less than 1.0
+    @param distances neighbors distance vector in a plane vector
+    @param offsets indicates where start a point neighbors group
+    @param valid_flag (output) indicate which points are valid
+ */
+void validate_distance(const thrust::device_vector<float>& distance, const thrust::device_vector<int>& offsets,
                        thrust::device_vector<bool>& valid_flag);
 
-__global__ void validate_distance_kernel(const float* distance, int* offsets, bool* flag);
-
+// Functor to extract and flatten the (x, y, z) components of the float4 at a given index
+/*!
+    Get submatrix from selected points
+    @param cldDevice points cloud
+    @param indices_d index of interest
+    @param offset indicates where start the point neighbors group
+    @param neighbors neighbors number
+    @param output output matrix
+*/
+void get_points_submatrix(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
+                          int offset, int neighbors, thrust::device_vector<float>& output);
+/*!
+ */
 void solve_linear_system(thrust::device_vector<float>& A, int m, int n, thrust::device_vector<float>& X, int x_index);
 
-__global__ void assemble_X0s_kernel(const float* X0s, float4* Xs, bool* flag, int iterations);
+void todo_name(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
+               const thrust::host_vector<bool>& valid_flag, const thrust::host_vector<int>& offsets,
+               const int neighbors, thrust::device_vector<float>& X0s);
 
 void get_planes_coef(thrust::device_vector<float>& X0s, thrust::device_vector<float4>& Xs,
                      thrust::device_vector<bool>& flagValid, size_t size_x);
-
-__global__ void validate_planes_kernel(const float4* cloud, const int* pointSearchIndices, const int* offsets,
-                                       const float4* Xs, bool* flag, int numIndices, int pointSearchIndSize);
 
 void validate_planes(thrust::device_vector<float4> cldDevice, thrust::device_vector<int>& indices_d,
                      thrust::device_vector<int>& offsets, thrust::device_vector<float4>& Xs, int neighbors,
                      thrust::device_vector<bool>& valid_flag);
 
-__global__ void compute_coeffs_kernel(const float4* points_Sel, const float4* points_Ori, const float4* Xs, bool* flag,
-                                      float4* coefs, int indices);
-
 void compute_coeffs(const thrust::device_vector<float4>& points_Sel, const thrust::device_vector<float4>& points_Ori,
                     const thrust::device_vector<float4>& Xs, thrust::device_vector<bool>& valid_flag,
                     thrust::device_vector<float4>& coeffs);
 
-template <typename PointType>
-void float42PointType(const thrust::device_vector<float4>& coeffs, std::vector<PointType>& coeffSelSurfVec)
-{
-    thrust::host_vector<float4> coeffs_h = coeffs;
-    std::transform(coeffs_h.begin(), coeffs_h.end(), coeffSelSurfVec.begin(), [](float4 point) -> PointType {
-        return {point.x, point.y, point.z, point.w};
-    });
-}
+template <typename T>
+void copy_to_host(const thrust::device_vector<T>& vector_d, thrust::host_vector<T>& vector_h);
 
 #endif  // CUDA_UTILS_H_
 #endif  // FLANN_USE_CUDA

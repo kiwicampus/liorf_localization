@@ -1199,7 +1199,7 @@ class mapOptimization : public ParamServer
         std::vector<float> flat_tranform(12);
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 4; col++) flat_tranform[row * 4 + col] = transPointAssociateToMap(row, col);
-        apply_transforms(points_Ori, points_Sel, flat_tranform.data());
+        apply_transforms(points_Ori, points_Sel, flat_tranform);
 
         thrust::host_vector<int> offsets_h;
         int neighbors = 5;
@@ -1209,8 +1209,8 @@ class mapOptimization : public ParamServer
 
         thrust::device_vector<bool> valid_flag;
         validate_distance(kdtreeSurfFromMap.sqrDists_d, offsets, valid_flag);
-        thrust::host_vector<bool> valid_flag_h = valid_flag;
-
+        thrust::host_vector<bool> valid_flag_h;
+        copy_to_host(valid_flag, valid_flag_h);
         thrust::device_vector<float> X0s;
         resize_device_vector(X0s, laserCloudSurfLastDSNum * 3);
 #pragma omp parallel for num_threads(numberOfCores)
@@ -1218,8 +1218,8 @@ class mapOptimization : public ParamServer
         {
             if (!valid_flag_h[i]) continue;
             thrust::device_vector<float> matA0;  // 5x3 matrix
-            resize_device_vector(matA0, neighbors * 3);
-            kdtreeSurfFromMap.getPointsSubmatrix(offsets_h[i], neighbors, matA0);
+            get_points_submatrix(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets_h[i], neighbors,
+                                 matA0);
 
             // 3x1 vector
             solve_linear_system(matA0, 5, 3, X0s, i * 3);
@@ -1235,9 +1235,14 @@ class mapOptimization : public ParamServer
         compute_coeffs(points_Sel, points_Ori, Xs, valid_flag, coeffs);
 
         laserCloudOriSurfVec.assign(laserCloudSurfLastDS->points.begin(), laserCloudSurfLastDS->points.end());
-        float42PointType(coeffs, coeffSelSurfVec);
-        valid_flag_h = valid_flag;
-        std::copy(valid_flag_h.begin(), valid_flag_h.end(), laserCloudOriSurfFlag.begin());
+        thrust::host_vector<float4> coeffs_h;
+        copy_to_host(coeffs, coeffs_h);
+        std::transform(coeffs_h.begin(), coeffs_h.end(), coeffSelSurfVec.begin(), [](float4 point) -> PointType {
+            return {point.x, point.y, point.z, point.w};
+        });
+
+        copy_to_host(valid_flag, valid_flag_h);
+        thrust::copy(valid_flag_h.begin(), valid_flag_h.end(), laserCloudOriSurfFlag.begin());
     }
 
 #else

@@ -4,31 +4,53 @@
 
 void resize_device_vector(thrust::device_vector<float>& vector, size_t v_size) { vector.resize(v_size); }
 
-void apply_transforms(thrust::device_vector<float4>& input, thrust::device_vector<float4>& output,
-                      float* transformation)
+struct ValidateDistanceFunctor
 {
-    output.resize(input.size());
-    thrust::transform(input.begin(), input.end(), output.begin(), PointAssociateToMapFunctor(transformation));
-}
+    const float* distance;
 
-__global__ void validate_distance_kernel(const float* distance, int* offsets, bool* flag, int indices)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= indices) return;
+    ValidateDistanceFunctor(const float* _distance) : distance(_distance) {}
 
-    flag[idx] = distance[offsets[idx] + 4];
-}
+    __device__ bool operator()(int offset) const { return distance[offset + 4] < 1.0; }
+};
 
-void validate_distance(thrust::device_vector<float>& distance, thrust::device_vector<int>& offsets,
+void validate_distance(const thrust::device_vector<float>& distance, const thrust::device_vector<int>& offsets,
                        thrust::device_vector<bool>& valid_flag)
 {
     valid_flag.resize(offsets.size());
-    const int threadsPerBlock = 256;
-    const int blocksPerGrid = (offsets.size() + threadsPerBlock - 1) / threadsPerBlock;
-    validate_distance_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        thrust::raw_pointer_cast(distance.data()), thrust::raw_pointer_cast(offsets.data()),
-        thrust::raw_pointer_cast(valid_flag.data()), offsets.size());
-    cudaDeviceSynchronize();
+    thrust::transform(offsets.begin(), offsets.end(), valid_flag.begin(),
+                      ValidateDistanceFunctor(thrust::raw_pointer_cast(distance.data())));
+}
+
+struct extract_and_flatten_functor
+{
+    const float4* points;
+    const int* indices;
+    const int offset;
+
+    extract_and_flatten_functor(const thrust::device_vector<float4>& points_,
+                                const thrust::device_vector<int>& indices_, const int offset_)
+        : points(thrust::raw_pointer_cast(points_.data()))
+        , indices(thrust::raw_pointer_cast(indices_.data()))
+        , offset(offset_)
+    {
+    }
+
+    __device__ thrust::tuple<float, float, float> operator()(int j) const
+    {
+        int index = indices[offset + j];
+        return thrust::make_tuple(points[index].x, points[index].y, points[index].z);
+    }
+};
+
+void get_points_submatrix(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
+                          int offset, int neighbors, thrust::device_vector<float>& output)
+{
+    // Perform the transformation
+    thrust::transform(
+        thrust::make_counting_iterator(0),          // Starting index
+        thrust::make_counting_iterator(neighbors),  // Ending index
+        thrust::make_zip_iterator(thrust::make_tuple(output.begin(), output.begin() + 1, output.begin() + 2)),
+        extract_and_flatten_functor(cldDevice, indices_d, offset));
 }
 
 // Helper function to solve linear system using cuSOLVER
@@ -68,113 +90,184 @@ void solve_linear_system(thrust::device_vector<float>& A, int m, int n, thrust::
     cusolverDnDestroy(cusolverH);
 }
 
-__global__ void assemble_X0s_kernel(const float* X0s, float4* Xs, bool* flag, int iterations)
+struct GetPlanesCoefFunctor
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= iterations) return;
-    if (!flag[idx]) return;
+    __device__ float4 operator()(const thrust::tuple<float, float, float, bool>& t) const
+    {
+        // Unpack the tuple
+        float pa = thrust::get<0>(t);
+        float pb = thrust::get<1>(t);
+        float pc = thrust::get<2>(t);
+        bool flag = thrust::get<3>(t);
 
-    float pa = X0s[3 * idx];
-    float pb = X0s[3 * idx + 1];
-    float pc = X0s[3 * idx + 2];
-    float ps = sqrt(pa * pa + pb * pb + pc * pc);
+        // Check the flag
+        if (!flag) return make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    pa /= ps;
-    pb /= ps;
-    pc /= ps;
-    float pd = 1.0f / ps;
-    Xs[idx] = make_float4(pa, pb, pc, pd);
-}
+        // Perform the operations
+        float ps = sqrt(pa * pa + pb * pb + pc * pc);
+        pa /= ps;
+        pb /= ps;
+        pc /= ps;
+        float pd = 1.0f / ps;
+
+        return make_float4(pa, pb, pc, pd);
+    }
+};
 
 void get_planes_coef(thrust::device_vector<float>& X0s, thrust::device_vector<float4>& Xs,
                      thrust::device_vector<bool>& flagValid, size_t size_x)
 {
     Xs.resize(size_x);
-    const int threadsPerBlock = 256;
-    const int blocksPerGrid = (size_x + threadsPerBlock - 1) / threadsPerBlock;
-    assemble_X0s_kernel<<<blocksPerGrid, threadsPerBlock>>>(thrust::raw_pointer_cast(X0s.data()),
-                                                            thrust::raw_pointer_cast(Xs.data()),
-                                                            thrust::raw_pointer_cast(flagValid.data()), size_x);
-    cudaDeviceSynchronize();  // Ensure kernel completion
+
+    // Create a zip iterator to combine the input vectors
+    auto begin = thrust::make_zip_iterator(
+        thrust::make_tuple(X0s.begin(), X0s.begin() + size_x, X0s.begin() + 2 * size_x, flagValid.begin()));
+
+    auto end = thrust::make_zip_iterator(
+        thrust::make_tuple(X0s.begin() + size_x, X0s.begin() + 2 * size_x, X0s.end(), flagValid.end()));
+
+    // Apply the functor to the input range and store the result in Xs
+    thrust::transform(begin, end, Xs.begin(), GetPlanesCoefFunctor());
 }
 
-__global__ void validate_planes_kernel(const float4* cloud, const int* pointSearchIndices, const int* offsets,
-                                       const float4* Xs, bool* flag, int numIndices, int pointSearchIndSize)
+struct ValidatePlanesFunctor
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numIndices) return;
-    if (!flag[idx]) return;
+    const float4* cloud;
+    const int* pointSearchIndices;
+    const int* offsets;
+    const int pointSearchIndSize;
 
-    float pa = Xs[idx].x;
-    float pb = Xs[idx].y;
-    float pc = Xs[idx].z;
-    float pd = Xs[idx].w;
-
-    bool isValid = true;
-    for (int j = 0; j < pointSearchIndSize; j++)
+    ValidatePlanesFunctor(const float4* cloud_, const int* pointSearchIndices_, const int* offsets_,
+                          int pointSearchIndSize_)
+        : cloud(cloud_)
+        , pointSearchIndices(pointSearchIndices_)
+        , offsets(offsets_)
+        , pointSearchIndSize(pointSearchIndSize_)
     {
-        int pointIdx = pointSearchIndices[offsets[idx] + j];
-        float4 point = cloud[pointIdx];
-        if (fabs(pa * point.x + pb * point.y + pc * point.z + pd) > 0.2)
-        {
-            isValid = false;
-            break;
-        }
     }
-    flag[idx] = isValid;
-}
 
+    __device__ bool operator()(const thrust::tuple<float4, int, bool>& t) const
+    {
+        float4 plane = thrust::get<0>(t);
+        int idx = thrust::get<1>(t);
+        bool flag = thrust::get<2>(t);
+
+        if (!flag) return false;
+
+        float pa = plane.x;
+        float pb = plane.y;
+        float pc = plane.z;
+        float pd = plane.w;
+
+        // Validate the plane
+        for (int j = 0; j < pointSearchIndSize; ++j)
+        {
+            int pointIdx = pointSearchIndices[offsets[idx] + j];
+            float4 point = cloud[pointIdx];
+            if (fabs(pa * point.x + pb * point.y + pc * point.z + pd) > 0.2)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+};
+
+// Function to perform the transformation using Thrust
 void validate_planes(thrust::device_vector<float4> cldDevice, thrust::device_vector<int>& indices_d,
                      thrust::device_vector<int>& offsets, thrust::device_vector<float4>& Xs, int neighbors,
                      thrust::device_vector<bool>& valid_flag)
 {
-    const int threadsPerBlock = 256;
-    const int blocksPerGrid = (Xs.size() + threadsPerBlock - 1) / threadsPerBlock;
-    validate_planes_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        thrust::raw_pointer_cast(cldDevice.data()), thrust::raw_pointer_cast(indices_d.data()),
-        thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(Xs.data()),
-        thrust::raw_pointer_cast(valid_flag.data()), valid_flag.size(), neighbors);
-    cudaDeviceSynchronize();
+    // Ensure that the flag vector has the correct size
+    valid_flag.resize(Xs.size());
+
+    // Apply the transformation using Thrust
+    thrust::transform(
+        thrust::make_zip_iterator(
+            thrust::make_tuple(Xs.begin(), thrust::counting_iterator<int>(0), valid_flag.begin())),
+        thrust::make_zip_iterator(
+            thrust::make_tuple(Xs.end(), thrust::counting_iterator<int>(Xs.size()), valid_flag.end())),
+        valid_flag.begin(),
+        ValidatePlanesFunctor(thrust::raw_pointer_cast(cldDevice.data()), thrust::raw_pointer_cast(indices_d.data()),
+                              thrust::raw_pointer_cast(offsets.data()), neighbors));
 }
 
-__global__ void compute_coeffs_kernel(const float4* points_Sel, const float4* points_Ori, const float4* Xs, bool* flag,
-                                      float4* coefs, int indices)
+struct compute_coeffs_functor
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= indices) return;
-    if (!flag[idx]) return;
-
-    float pd2 =
-        Xs[idx].x * points_Sel[idx].x + Xs[idx].y * points_Sel[idx].y + Xs[idx].z * points_Sel[idx].z + Xs[idx].w;
-
-    float s = 1 - 0.9 * fabs(pd2) /
-                      sqrt(sqrt(points_Ori[idx].x * points_Ori[idx].x + points_Ori[idx].y * points_Ori[idx].y +
-                                points_Ori[idx].z * points_Ori[idx].z));
-    if (s <= 0.1)
+    __host__ __device__ thrust::tuple<float4, bool> operator()(
+        const thrust::tuple<float4, float4, float4, bool>& t) const
     {
-        flag[idx] = false;
-        return;
+        float4 points_Sel = thrust::get<0>(t);
+        float4 points_Ori = thrust::get<1>(t);
+        float4 Xs = thrust::get<2>(t);
+        bool flag = thrust::get<3>(t);
+
+        float4 coeffs = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        if (!flag) return thrust::make_tuple(coeffs, false);
+
+        float pd2 = Xs.x * points_Sel.x + Xs.y * points_Sel.y + Xs.z * points_Sel.z + Xs.w;
+
+        float s =
+            1.0f -
+            0.9f * fabs(pd2) /
+                sqrt(sqrt(points_Ori.x * points_Ori.x + points_Ori.y * points_Ori.y + points_Ori.z * points_Ori.z));
+
+        if (s <= 0.1f)
+        {
+            return thrust::make_tuple(coeffs, false);
+        }
+
+        coeffs.x = s * Xs.x;
+        coeffs.y = s * Xs.y;
+        coeffs.z = s * Xs.z;
+        coeffs.w = s * pd2;
+
+        return thrust::make_tuple(coeffs, true);
     }
+};
 
-    coefs[idx].x = s * Xs[idx].x;
-    coefs[idx].y = s * Xs[idx].y;
-    coefs[idx].z = s * Xs[idx].z;
-    coefs[idx].w = s * pd2;
-}
-
+// Function to perform the transformation using Thrust
 void compute_coeffs(const thrust::device_vector<float4>& points_Sel, const thrust::device_vector<float4>& points_Ori,
                     const thrust::device_vector<float4>& Xs, thrust::device_vector<bool>& valid_flag,
                     thrust::device_vector<float4>& coeffs)
 {
-    const int threadsPerBlock = 256;
-    const int blocksPerGrid = (points_Ori.size() + threadsPerBlock - 1) / threadsPerBlock;
     coeffs.resize(points_Ori.size());
 
-    compute_coeffs_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        thrust::raw_pointer_cast(points_Sel.data()), thrust::raw_pointer_cast(points_Ori.data()),
-        thrust::raw_pointer_cast(Xs.data()), thrust::raw_pointer_cast(valid_flag.data()),
-        thrust::raw_pointer_cast(coeffs.data()), points_Ori.size());
-    cudaDeviceSynchronize();
+    // Apply the transformation using Thrust
+    thrust::transform(
+        thrust::make_zip_iterator(
+            thrust::make_tuple(points_Sel.begin(), points_Ori.begin(), Xs.begin(), valid_flag.begin())),
+        thrust::make_zip_iterator(thrust::make_tuple(points_Sel.end(), points_Ori.end(), Xs.end(), valid_flag.end())),
+        thrust::make_zip_iterator(thrust::make_tuple(coeffs.begin(), valid_flag.begin())), compute_coeffs_functor());
+}
+
+void copy_to_host(const thrust::device_vector<float4>& vector_d, thrust::host_vector<float4>& vector_h)
+{
+    vector_h.resize(vector_d.size());
+    thrust::copy(vector_d.begin(), vector_d.end(), vector_h.begin());
+}
+
+template <>
+void copy_to_host(const thrust::device_vector<float4>& vector_d, thrust::host_vector<float4>& vector_h)
+{
+    vector_h.resize(vector_d.size());
+    thrust::copy(vector_d.begin(), vector_d.end(), vector_h.begin());
+}
+
+template <>
+void copy_to_host(const thrust::device_vector<int>& vector_d, thrust::host_vector<int>& vector_h)
+{
+    vector_h.resize(vector_d.size());
+    thrust::copy(vector_d.begin(), vector_d.end(), vector_h.begin());
+}
+
+template <>
+void copy_to_host(const thrust::device_vector<bool>& vector_d, thrust::host_vector<bool>& vector_h)
+{
+    vector_h.resize(vector_d.size());
+    thrust::copy(vector_d.begin(), vector_d.end(), vector_h.begin());
 }
 
 #endif

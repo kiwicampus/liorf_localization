@@ -214,19 +214,6 @@ class KdTreeFLANN
     Returns the pointer to the thrust device vector for Squared Distances
     */
     PointType* getSqrtDistDevicePtr() { return (float*)thrust::raw_pointer_cast(&this->sqrDists_d[0]); }
-
-    void getPointsSubmatrix(int offset, int neighbors, thrust::device_vector<float>& matA)
-    {
-        for (size_t j = 0; j < neighbors; j++)
-        {
-            int index;
-            thrust::copy(indices_d.begin() + offset + j, indices_d.begin() + offset + j + 1, &index);
-            auto raw_point_pointer = (float*)thrust::raw_pointer_cast(&this->cldDevice[index]);
-
-            auto row_iterator = matA.begin() + j * 3;
-            thrust::copy(raw_point_pointer, raw_point_pointer + 3, row_iterator);
-        }
-    }
 };
 
 }  // namespace cudaflann
