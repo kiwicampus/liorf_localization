@@ -169,7 +169,7 @@ def generate_launch_description():
     def reniceness_execute():
         time.sleep(10)
         print(f"Renicing map optimization node in localization")
-        cmd = "ps -eLf | grep 'liorf_mapOptmization' | grep -v grep | awk '{print $4}' | xargs -r -n1 renice -20 -p"
+        cmd = "ps -eLf | grep 'liorf_localization_mapOptmization' | grep -v grep | awk '{print $4}' | xargs -r -n1 renice -20 -p"
         subprocess.call(cmd, shell=True)
 
     def reniceness_map_optimization(event: ProcessStarted, context: LaunchContext):

@@ -187,12 +187,15 @@ public:
         pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/map_local", QosPolicy(history_policy, reliability_policy));
         pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
         pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
-        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", QosPolicy(history_policy, reliability_policy));
         pubSLAMInfo = create_publisher<liorf_localization::msg::CloudInfo>("liorf_localization/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
         
         pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
         pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
         pubLatency = create_publisher<std_msgs::msg::Float32>("liorf_localization/mapping/latency", QosPolicy(history_policy, reliability_policy));
+
+        rclcpp::PublisherOptionsWithAllocator<std::allocator<void>> pub_options;
+        pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
+        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", rclcpp::QoS(1).transient_local(), pub_options);
 
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
@@ -267,7 +270,8 @@ public:
     // add by yjz_lucky_boy
     void initialposeHandler(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msgIn) 
     {
-        publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);
+        // in case you want to republish the map if it was not loaded on rviz
+        // publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);
         tf2::Quaternion q(msgIn->pose.pose.orientation.x, msgIn->pose.pose.orientation.y, 
                             msgIn->pose.pose.orientation.z, msgIn->pose.pose.orientation.w);
         tf2::Matrix3x3 qm(q);
