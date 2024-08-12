@@ -195,7 +195,7 @@ public:
 
         rclcpp::PublisherOptionsWithAllocator<std::allocator<void>> pub_options;
         pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", rclcpp::QoS(1).transient_local(), pub_options);
+        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", rclcpp::QoS(10).transient_local(), pub_options);
 
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
@@ -264,7 +264,7 @@ public:
         kdtreeSurfFromMap.setInputCloud(laserCloudSurfFromMapDS);
 
         sleep(3);
-        publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);   
+        publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame, false);   
     }
 
     // add by yjz_lucky_boy

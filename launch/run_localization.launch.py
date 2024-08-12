@@ -18,13 +18,13 @@ from launch.launch_context import LaunchContext
 
 def generate_launch_description():
     share_dir = get_package_share_directory("liorf_localization")
-    parameter_file = LaunchConfiguration("params_file")
+    parameter_file = LaunchConfiguration("liorf_params_file")
     rviz_config_file = os.path.join(share_dir, "rviz", "localization.rviz")
     use_rviz = LaunchConfiguration("use_rviz")
     scale_livox_imu = LaunchConfiguration("scale_livox_imu")
 
     params_declare = DeclareLaunchArgument(
-        "params_file",
+        "liorf_params_file",
         default_value=os.path.join(share_dir, "config", "localization.yaml"),
         description="Path to the ROS2 parameters file to use.",
     )
