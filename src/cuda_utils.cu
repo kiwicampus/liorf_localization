@@ -1,5 +1,6 @@
 #ifdef FLANN_USE_CUDA
 
+#include <iostream>
 #include "cuda_utils.h"
 
 void resize_device_vector(thrust::device_vector<float>& vector, size_t v_size) { vector.resize(v_size); }
@@ -87,6 +88,7 @@ struct extract_and_flatten_functor
 void get_points_submatrix(const thrust::device_vector<float4>& cldDevice, const thrust::device_vector<int>& indices_d,
                           int offset, int neighbors, thrust::device_vector<float>& output)
 {
+    output.resize(3 * neighbors);
     // Perform the transformation
     thrust::transform(
         thrust::make_counting_iterator(0),          // Starting index

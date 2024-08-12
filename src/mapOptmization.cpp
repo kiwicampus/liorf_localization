@@ -1194,52 +1194,107 @@ class mapOptimization : public ParamServer
 #ifdef FLANN_USE_CUDA
     void surfOptimization(const thrust::device_vector<float4>& points_Ori)
     {
+        auto start = std::chrono::high_resolution_clock::now();
+        RCLCPP_WARN(get_logger(), "Start surfOptimization");
         updatePointAssociateToMap();
+        auto stop = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "update_points %ld u", duration);
         thrust::device_vector<float4> points_Sel;
         std::vector<float> flat_tranform(12);
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 4; col++) flat_tranform[row * 4 + col] = transPointAssociateToMap(row, col);
         apply_transforms(points_Ori, flat_tranform, points_Sel);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "Transforms applied %ld u", duration);
 
         thrust::host_vector<int> offsets_h;
         int neighbors = 5;
         kdtreeSurfFromMap.nearestKSearch(points_Sel, neighbors, offsets_h);
         thrust::device_vector<int> offsets = offsets_h;
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "nearestKSearch %ld u", duration);
 
         thrust::device_vector<bool> valid_flag;
         validate_distance(kdtreeSurfFromMap.sqrDists_d, offsets, valid_flag);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "validate_distance %ld u", duration);
+
         thrust::host_vector<bool> valid_flag_h;
         copy_to_host(valid_flag, valid_flag_h);
+        thrust::host_vector<int> indices_h;
+        copy_to_host(kdtreeSurfFromMap.indices_d, indices_h);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "copy_to_host valid_flag %ld u", duration);
 
-        thrust::device_vector<float> X0s;
-        resize_device_vector(X0s, laserCloudSurfLastDSNum * 3);
+        thrust::host_vector<float> X0s_h(laserCloudSurfLastDSNum * 3);
+        // RCLCPP_WARN(get_logger(), "laserCloudSurfLastDSNum %d", laserCloudSurfLastDSNum);
 #pragma omp parallel for num_threads(numberOfCores)
         for (int i = 0; i < laserCloudSurfLastDSNum; i++)
         {
             if (!valid_flag_h[i]) continue;
-            thrust::device_vector<float> matA0;  // 5x3 matrix
-            get_points_submatrix(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets_h[i], neighbors,
-                                 matA0);
+            Eigen::Matrix<float, 5, 3> matA0;
+            Eigen::Matrix<float, 5, 1> matB0;
 
-            solve_linear_system(matA0, 5, 3, X0s, i * 3);
+            matB0.fill(-1);
+            for (int j = 0; j < 5; j++)
+            {
+                int index = indices_h[j + offsets_h[i]];
+                matA0(j, 0) = laserCloudSurfFromMapDS->points[index].x;
+                matA0(j, 1) = laserCloudSurfFromMapDS->points[index].y;
+                matA0(j, 2) = laserCloudSurfFromMapDS->points[index].z;
+            }
+
+            Eigen::Vector3f matX0 = matA0.colPivHouseholderQr().solve(matB0);
+
+            int offset = i * 3;
+            for (int j = 0; j < 3; j++) X0s_h[offset + j] = matX0(j);
+
+            // thrust::device_vector<float> matA0;  // 5x3 matrix
+            // get_points_submatrix(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets_h[i], neighbors,
+            //                      matA0);
+            // solve_linear_system(matA0, 5, 3, X0s, i * 3);
         }
+        thrust::device_vector<float> X0s = X0s_h;
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "solve_linear_system %ld u", duration);
 
         thrust::device_vector<float4> Xs;
         get_planes_coef(X0s, Xs, valid_flag, laserCloudSurfLastDSNum);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "get_planes_coef %ld u", duration);
 
         validate_planes(kdtreeSurfFromMap.cldDevice, kdtreeSurfFromMap.indices_d, offsets, Xs, neighbors, valid_flag);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "validate_planes %ld u", duration);
 
         thrust::device_vector<float4> coeffs;
         compute_coeffs(points_Sel, points_Ori, Xs, valid_flag, coeffs);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "compute_coeffs %ld u", duration);
 
         laserCloudOriSurfVec.assign(laserCloudSurfLastDS->points.begin(), laserCloudSurfLastDS->points.end());
         thrust::host_vector<float4> coeffs_h;
         copy_to_host(coeffs, coeffs_h);
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        RCLCPP_WARN(get_logger(), "copy_to_host coeffs %ld u", duration);
         std::transform(coeffs_h.begin(), coeffs_h.end(), coeffSelSurfVec.begin(), [](float4 point) -> PointType {
             return {point.x, point.y, point.z, point.w};
         });
 
+        stop = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
         copy_to_host(valid_flag, valid_flag_h);
+        RCLCPP_WARN(get_logger(), "copy_to_host valid_flag");
         thrust::copy(valid_flag_h.begin(), valid_flag_h.end(), laserCloudOriSurfFlag.begin());
     }
 
