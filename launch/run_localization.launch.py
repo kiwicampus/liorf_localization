@@ -151,7 +151,7 @@ def generate_launch_description():
             package="tf2_ros",
             executable="static_transform_publisher",
             name="static_transform_publisher",
-            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "livox_frame"],
+            arguments=["0", "0", "0", "0", "0", "0", "livox_link", "livox_frame"],
             output="screen",
         ))
         launch_description.append(Node(
