@@ -244,9 +244,10 @@ public:
 
     void global_loc_goal_response_callback(const rclcpp_action::ClientGoalHandle<GlobalLocalization>::SharedPtr & goal)
     {
-        global_localization_timer_->reset();
         if(!goal){
             RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
+            global_localization_timer_->reset();
+
         }
     }
 
