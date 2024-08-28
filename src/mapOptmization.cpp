@@ -244,6 +244,7 @@ public:
 
     void global_loc_goal_response_callback(const rclcpp_action::ClientGoalHandle<GlobalLocalization>::SharedPtr & goal)
     {
+        global_localization_timer_->reset();
         if(!goal){
             RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
         }
@@ -263,12 +264,15 @@ public:
             break;
         case rclcpp_action::ResultCode::ABORTED:
             RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+            global_localization_timer_->reset();
             return;
         case rclcpp_action::ResultCode::CANCELED:
             RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
+            global_localization_timer_->reset();
             return;
         default:
             RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+            global_localization_timer_->reset();
             return;
         }
         RCLCPP_INFO(this->get_logger(), "Result received");
