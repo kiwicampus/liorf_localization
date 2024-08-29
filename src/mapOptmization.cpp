@@ -165,6 +165,10 @@ public:
     float initialize_pose[6];
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    Eigen::Affine3f base_link_to_livox_, livox_to_base_link_;
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
@@ -205,6 +209,9 @@ public:
 
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+        // Initialize the TF buffer and listener
+        tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock(), tf2::Duration(tf2::BUFFER_CORE_DEFAULT_CACHE_TIME), std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*) {}));
+        tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_, std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*) {}), false); // Pass false to not use dynamic transform topic
 
         // srvSaveMap = create_service<liorf_localization::srv::save_map>("liorf_localization/save_map", 
         //                 std::bind(&mapOptimization::saveMapService, this, std::placeholders::_1, std::placeholders::_2 ));
@@ -338,6 +345,34 @@ public:
     // add by yjz_lucky_boy
     void initialposeHandler(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msgIn) 
     {
+        geometry_msgs::msg::TransformStamped transformStamped;
+        try
+        {
+            // Lookup transform from base_link to livox_link
+            transformStamped = tf_buffer_->lookupTransform("livox_link", "base_link", tf2::TimePointZero);
+
+            // Convert TransformStamped to Affine3f
+            tf2::Quaternion quat;
+            tf2::fromMsg(transformStamped.transform.rotation, quat);
+            double roll, pitch, yaw;
+            tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+
+            // Construct Affine3f transformation
+            base_link_to_livox_ = Eigen::Affine3f::Identity();
+            base_link_to_livox_.rotate(Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()));
+            base_link_to_livox_.rotate(Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()));
+            base_link_to_livox_.rotate(Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()));
+
+            livox_to_base_link_ = base_link_to_livox_.inverse();
+
+            std::cout << "livox to base_link is\n" << livox_to_base_link_.matrix() << std::endl;
+
+        }
+        catch (tf2::TransformException &ex)
+        {
+            RCLCPP_WARN(this->get_logger(), "Could not transform base_link to livox_link: %s", ex.what());
+            return;
+        }
         // in case you want to republish the map if it was not loaded on rviz
         // publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame);
         tf2::Quaternion q(msgIn->pose.pose.orientation.x, msgIn->pose.pose.orientation.y, 
@@ -379,6 +414,8 @@ public:
         if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)
         {
             timeLastProcessing = timeLaserInfoCur;
+
+            adjustForRotation();
 
             if (!system_initialized)
               if(!systemInitialize())
@@ -1167,6 +1204,12 @@ public:
         downSizeFilterSurf.setInputCloud(laserCloudSurfLast);
         downSizeFilterSurf.filter(*laserCloudSurfLastDS);
         laserCloudSurfLastDSNum = laserCloudSurfLastDS->size();
+    }
+
+    void adjustForRotation()
+    {
+        // Use the cached transform to adjust the cloud from livox_link to base_link
+        pcl::transformPointCloud(*laserCloudSurfLast, *laserCloudSurfLast, livox_to_base_link_);
     }
 
     void updatePointAssociateToMap()
