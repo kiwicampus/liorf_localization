@@ -170,6 +170,9 @@ public:
 
     Eigen::Affine3f base_link_to_livox_, livox_to_base_link_;
 
+    int initial_guess_max_iters_ = 0
+    int initial_guess_iters_ = 0;
+
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
         ISAM2Params parameters;
@@ -227,10 +230,21 @@ public:
         // Initial guess action client
         global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
         global_localization_timer_ = create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::global_localization_send_goal, this));
+    
+        initial_guess_max_iters_ = std::getenv("INITIAL_GUESS_MAX_ITERS")
+                                    ? std::stoi(std::getenv("INITIAL_GUESS_MAX_ITERS"))
+                                    : 0;
     }
 
     void global_localization_send_goal()
     {
+        if(initial_guess_max_iters_ > 0 && initial_guess_iters_ >= initial_guess_max_iters_)
+        {
+            RCLCPP_WARN(this->get_logger(), "Initial guess max iterations reached, stopping global localization");
+            global_localization_timer_->cancel();
+            return;
+        }
+        initial_guess_iters_++;
         global_localization_timer_->cancel();
         if (!global_localization_client_ptr_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
