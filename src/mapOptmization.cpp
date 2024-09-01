@@ -170,7 +170,7 @@ public:
 
     Eigen::Affine3f base_link_to_livox_, livox_to_base_link_;
 
-    int initial_guess_max_iters_ = 0
+    int initial_guess_max_iters_ = 0;
     int initial_guess_iters_ = 0;
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
@@ -286,6 +286,11 @@ public:
             break;
         case rclcpp_action::ResultCode::ABORTED:
             RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+            if (result.result->best_score == -1)
+            {
+                // TODO: deal with this
+                RCLCPP_ERROR(this->get_logger(), "No valid .pcd map files in /data/global_loc_target");
+            }
             global_localization_timer_->reset();
             return;
         case rclcpp_action::ResultCode::CANCELED:
