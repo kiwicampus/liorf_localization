@@ -529,6 +529,8 @@ public:
             RCLCPP_ERROR(get_logger(), "initialize pose failed");
             has_initialize_pose = false;
             system_initialized = false;
+            // Try to initialize pose again
+            global_localization_timer_->reset();
             return false;
         }
     }
