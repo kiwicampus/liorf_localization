@@ -39,6 +39,8 @@ set(ros2_lib "rclcpp;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs
 
 rosidl_generate_interfaces(${PROJECT_NAME} 
   "msg/CloudInfo.msg"
+  "msg/OptimizationInfo.msg"
+  "msg/LocalizationInfo.msg"
   "srv/SaveMap.srv"
   DEPENDENCIES std_msgs sensor_msgs
 )

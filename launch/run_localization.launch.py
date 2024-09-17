@@ -63,6 +63,9 @@ def generate_launch_description():
             output="screen",
             respawn=respawn_nodes,
             respawn_delay=respawn_delay,
+            remappings=[
+                ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+            ],
         ),
         Node(
             package="liorf_localization",
@@ -72,16 +75,19 @@ def generate_launch_description():
             output="screen",
             respawn=respawn_nodes,
             respawn_delay=respawn_delay,
+            remappings=[
+                ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+            ],
         ),
-        Node(
-            package="liorf_localization",
-            executable="liorf_localization_wheelOdomPreintegration",
-            name="liorf_localization_wheelOdomPreintegration",
-            parameters=[parameter_file],
-            output="screen",
-            respawn=respawn_nodes,
-            respawn_delay=respawn_delay,
-        ),
+        # Node(
+        #     package="liorf_localization",
+        #     executable="liorf_localization_wheelOdomPreintegration",
+        #     name="liorf_localization_wheelOdomPreintegration",
+        #     parameters=[parameter_file],
+        #     output="screen",
+        #     respawn=respawn_nodes,
+        #     respawn_delay=respawn_delay,
+        # ),
     ]
 
     if_condition = IfCondition(scale_livox_imu)

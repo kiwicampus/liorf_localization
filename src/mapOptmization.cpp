@@ -1,6 +1,7 @@
 #include "utility.h"
 #include "nanoflann_pcl.h"
 #include "liorf_localization/msg/cloud_info.hpp"
+#include "liorf_localization/msg/localization_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
 #include "initial_pose_interfaces/action/global_localization.hpp"
 #include <gtsam/geometry/Rot3.h>
@@ -86,8 +87,8 @@ public:
 
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubMapPose;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGpsPose;
-    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pubLatency;
-    std_msgs::msg::Float32 msgLatency;
+    rclcpp::Publisher<liorf_localization::msg::LocalizationInfo>::SharedPtr pubLocalizationInfo;
+    liorf_localization::msg::LocalizationInfo msgLocalizationInfo;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
 
@@ -204,7 +205,7 @@ public:
         
         pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
         pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
-        pubLatency = create_publisher<std_msgs::msg::Float32>("liorf_localization/mapping/latency", QosPolicy(history_policy, reliability_policy));
+        pubLocalizationInfo = create_publisher<liorf_localization::msg::LocalizationInfo>("liorf_localization/mapping/localization_info", QosPolicy(history_policy, reliability_policy));
 
         rclcpp::PublisherOptionsWithAllocator<std::allocator<void>> pub_options;
         pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
@@ -246,8 +247,10 @@ public:
         }
         initial_guess_iters_++;
         global_localization_timer_->cancel();
-        if (!global_localization_client_ptr_->wait_for_action_server()) {
+        if (!global_localization_client_ptr_->wait_for_action_server(std::chrono::seconds(1))) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
+            global_localization_timer_->reset();
+            return;
             // rclcpp::shutdown();
         }
         auto goal_msg = GlobalLocalization::Goal();
@@ -378,6 +381,7 @@ public:
 
             // Construct Affine3f transformation
             base_link_to_livox_ = Eigen::Affine3f::Identity();
+            base_link_to_livox_.translate(Eigen::Vector3f(transformStamped.transform.translation.x, transformStamped.transform.translation.y, transformStamped.transform.translation.z));
             base_link_to_livox_.rotate(Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()));
             base_link_to_livox_.rotate(Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()));
             base_link_to_livox_.rotate(Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()));
@@ -465,8 +469,8 @@ public:
             std::chrono::duration<double> elapsed = end - start;
 
             // Log the elapsed time
-            msgLatency.data = static_cast<float>(elapsed.count());
-            pubLatency->publish(msgLatency);
+            msgLocalizationInfo.optimization_info.optimization_time = static_cast<float>(elapsed.count());
+            pubLocalizationInfo->publish(msgLocalizationInfo);
             // RCLCPP_INFO(rclcpp::get_logger("laserCloudInfoHandler"), "Execution time: %f seconds", elapsed.count());
         }
 
@@ -1444,6 +1448,13 @@ public:
         transformTobeMapped[4] += matX.at<float>(4, 0);
         transformTobeMapped[5] += matX.at<float>(5, 0);
 
+        // Compute the residual vector
+        cv::Mat matR = matA * matX + matB;
+
+        // Calculate the RMSE
+        cv::Scalar residualSumSquares = cv::sum(matR.mul(matR));
+        double rmse = sqrt(residualSumSquares[0] / matR.rows);
+
         float deltaR = sqrt(
                             pow(pcl::rad2deg(matX.at<float>(0, 0)), 2) +
                             pow(pcl::rad2deg(matX.at<float>(1, 0)), 2) +
@@ -1452,6 +1463,10 @@ public:
                             pow(matX.at<float>(3, 0) * 100, 2) +
                             pow(matX.at<float>(4, 0) * 100, 2) +
                             pow(matX.at<float>(5, 0) * 100, 2));
+
+        msgLocalizationInfo.optimization_info.optimization_residuals_rmse = rmse;
+        msgLocalizationInfo.optimization_info.optimization_delta_r = deltaR;
+        msgLocalizationInfo.optimization_info.optimization_delta_t = deltaT;
 
         if (deltaR < static_cast<double>(mappingLmConvergenceRot) && deltaT < static_cast<double>(mappingLmConvergenceTrans)) {
             return true; // converged
@@ -1466,11 +1481,13 @@ public:
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto timeout = std::chrono::milliseconds(mappingProcessingTimeoutMs);
-
+        int iterCount = 0;
+        msgLocalizationInfo.tracked_features = laserCloudSurfLastDSNum;
         if (laserCloudSurfLastDSNum > 30)
         {
+            
             // kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
-            for (int iterCount = 0; iterCount < static_cast<int>(maxNumOptimizationIterations); iterCount++)
+            for (iterCount = 0; iterCount < static_cast<int>(maxNumOptimizationIterations); iterCount++)
             {
                 laserCloudOri->clear();
                 coeffSel->clear();
@@ -1486,6 +1503,7 @@ public:
                 if (elapsedTime > timeout)
                 {
                     RCLCPP_WARN(get_logger(), "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount, static_cast<float>(elapsedTime.count())/iterCount);
+                    msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
                     return false;
                 }
             }
@@ -1494,6 +1512,7 @@ public:
         } else {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
         }
+        msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
         return true;
     }
 
@@ -1820,6 +1839,7 @@ public:
         laserOdometryROS.pose.pose.position.x = transformTobeMapped[3];
         laserOdometryROS.pose.pose.position.y = transformTobeMapped[4];
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
+        // constrain the covariance to be published to the kalman filter with a reasonable value
         laserOdometryROS.pose.covariance = matrixToArray(poseCovariance, 5.0, 0.5);
         // Ref: http://wiki.ros.org/tf2/Tutorials/Migration/DataConversions
         tf2::Quaternion quat_tf;
@@ -1829,6 +1849,10 @@ public:
         laserOdometryROS.pose.pose.orientation = quat_msg;
         pubLaserOdometryGlobal->publish(laserOdometryROS);
         publishPoseWithCovariance(pubMapPose, laserOdometryROS.pose, timeLaserInfoStamp, mapFrame);
+
+        // now, set the real covariance to the localization info message
+        msgLocalizationInfo.map_pose.pose = laserOdometryROS.pose.pose;
+        msgLocalizationInfo.map_pose.covariance = matrixToArray(poseCovariance, std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
 
         // we will let the rest of the stack handle the tranforms        
         // Publish TF

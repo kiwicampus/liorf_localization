@@ -1,0 +1,5 @@
+float32 optimization_time
+uint16 optimization_iterations
+float32 optimization_delta_r
+float32 optimization_delta_t
+float32 optimization_residuals_rmse

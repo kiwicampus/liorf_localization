@@ -25,7 +25,7 @@ public:
     double lastUpdateTime = 0;
 
     // Wheel to lidar: 0.0, 0.0, 0.6 (x, y, z) + 0., 0.12467473, 0., 0.99219767 (q.x, q.y, q.z, q.w)
-    gtsam::Pose3 wheel2Lidar = gtsam::Pose3(gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0), gtsam::Point3(0.27, 0.0, 0.716));
+    gtsam::Pose3 wheel2Lidar = gtsam::Pose3(gtsam::Rot3::Quaternion(1.0, 0.0, 0.0, 0.0), gtsam::Point3(0.0, 0.0, 0.0));
     // Lidar to Wheel:[ 0.14844238  0.         -0.58134745] (x,y,z) + [ 0.         -0.12467473  0.          0.99219767] (q.x, q.y, q.z, q.w)
     gtsam::Pose3 lidar2Wheel = gtsam::Pose3(gtsam::Rot3::Quaternion(0.99219767, 0.0, -0.12467473, 0.0), gtsam::Point3(-0.007, 0.000, -0.621));
 
