@@ -20,7 +20,7 @@
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"
     useGpsElevation: true                      # if GPS elevation is bad, set to "false"
-    gpsCovThreshold: 0.0002                        # m^2, threshold for using GPS data
+    gpsCovThreshold: 0.0001                        # m^2, threshold for using GPS data
     poseCovThreshold: 0.000000000001                      # m^2, threshold for using GPS data
     
     # Export settings
