@@ -2,6 +2,7 @@
 #include "nanoflann_pcl.h"
 #include "liorf_localization/msg/cloud_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
+#include "initial_pose_interfaces/action/global_localization.hpp"
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -54,6 +55,8 @@ class mapOptimization : public ParamServer
 {
 
 public:
+    using GlobalLocalization = initial_pose_interfaces::action::GlobalLocalization;
+    using GoalHandleGlobalLocalization = rclcpp_action::ClientGoalHandle<GlobalLocalization>;
     // gtsam
     NonlinearFactorGraph gtSAMgraph;
     Values initialEstimate;
@@ -87,6 +90,9 @@ public:
     std_msgs::msg::Float32 msgLatency;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
+
+    rclcpp_action::Client<GlobalLocalization>::SharedPtr global_localization_client_ptr_;
+    rclcpp::TimerBase::SharedPtr global_localization_timer_;
 
     std::deque<nav_msgs::msg::Odometry> gpsQueue;
     liorf_localization::msg::CloudInfo cloudInfo;
@@ -164,6 +170,9 @@ public:
 
     Eigen::Affine3f base_link_to_livox_, livox_to_base_link_;
 
+    int initial_guess_max_iters_ = 0;
+    int initial_guess_iters_ = 0;
+
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
         ISAM2Params parameters;
@@ -217,6 +226,84 @@ public:
 
         allocateMemory();
         loadGlobalMap();
+
+        // Initial guess action client
+        global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
+        global_localization_timer_ = create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::global_localization_send_goal, this));
+    
+        initial_guess_max_iters_ = std::getenv("INITIAL_GUESS_MAX_ITERS")
+                                    ? std::stoi(std::getenv("INITIAL_GUESS_MAX_ITERS"))
+                                    : 0;
+    }
+
+    void global_localization_send_goal()
+    {
+        if(initial_guess_max_iters_ > 0 && initial_guess_iters_ >= initial_guess_max_iters_)
+        {
+            RCLCPP_WARN(this->get_logger(), "Initial guess max iterations reached, stopping global localization");
+            global_localization_timer_->cancel();
+            return;
+        }
+        initial_guess_iters_++;
+        global_localization_timer_->cancel();
+        if (!global_localization_client_ptr_->wait_for_action_server()) {
+            RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
+            // rclcpp::shutdown();
+        }
+        auto goal_msg = GlobalLocalization::Goal();
+        goal_msg.trigger = true;
+        goal_msg.estimate_best_map = true; // We want to estimate the best map out of the available submaps
+        RCLCPP_INFO(this->get_logger(), "Sending goal");
+
+        auto send_goal_options = rclcpp_action::Client<GlobalLocalization>::SendGoalOptions();
+        // send_goal_options.goal_response_callback = std::bind(&mapOptimization::global_loc_goal_response_callback, this, std::placeholders::_1);
+        send_goal_options.goal_response_callback = std::bind(&mapOptimization::global_loc_goal_response_callback, this, std::placeholders::_1);
+        send_goal_options.feedback_callback = std::bind(&mapOptimization::global_loc_feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+        send_goal_options.result_callback = std::bind(&mapOptimization::global_loc_result_callback, this, std::placeholders::_1);
+        global_localization_client_ptr_->async_send_goal(goal_msg, send_goal_options);
+    }
+
+    void global_loc_goal_response_callback(const rclcpp_action::ClientGoalHandle<GlobalLocalization>::SharedPtr & goal)
+    {
+        if(!goal){
+            RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
+            global_localization_timer_->reset();
+
+        }
+    }
+
+    void global_loc_feedback_callback(
+        GoalHandleGlobalLocalization::SharedPtr,
+        const std::shared_ptr<const GlobalLocalization::Feedback> feedback)
+    {
+        RCLCPP_INFO(this->get_logger(), "Received feedback: %d", feedback->status);
+    }
+
+    void global_loc_result_callback(const GoalHandleGlobalLocalization::WrappedResult & result)
+    {
+        switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+            break;
+        case rclcpp_action::ResultCode::ABORTED:
+            RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+            if (result.result->best_score == -1)
+            {
+                // TODO: deal with this
+                RCLCPP_ERROR(this->get_logger(), "No valid .pcd map files in /data/global_loc_target");
+            }
+            global_localization_timer_->reset();
+            return;
+        case rclcpp_action::ResultCode::CANCELED:
+            RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
+            global_localization_timer_->reset();
+            return;
+        default:
+            RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+            global_localization_timer_->reset();
+            return;
+        }
+        RCLCPP_INFO(this->get_logger(), "Result received");
+        RCLCPP_INFO(this->get_logger(), "Best score: %f, elapsed time: %f", result.result->best_score, result.result->elapsed_time);
     }
 
     void allocateMemory()
@@ -442,6 +529,8 @@ public:
             RCLCPP_ERROR(get_logger(), "initialize pose failed");
             has_initialize_pose = false;
             system_initialized = false;
+            // Try to initialize pose again
+            global_localization_timer_->reset();
             return false;
         }
     }

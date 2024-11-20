@@ -5,6 +5,7 @@
 
 // <!-- liorf_yjz_lucky_boy -->
 #include <rclcpp/rclcpp.hpp>
+#include "rclcpp_action/rclcpp_action.hpp"
 
 #include <std_msgs/msg/header.hpp>
 #include <common_lib.h>
