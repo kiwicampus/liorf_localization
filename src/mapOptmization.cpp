@@ -172,6 +172,7 @@ public:
     Eigen::Affine3f base_link_to_livox_, livox_to_base_link_;
 
     int initial_guess_max_iters_ = 0;
+    int initial_guess_seconds_between_attempts_ = 10;
     int initial_guess_iters_ = 0;
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
@@ -227,14 +228,18 @@ public:
 
         allocateMemory();
         loadGlobalMap();
-
-        // Initial guess action client
-        global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
-        global_localization_timer_ = create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::global_localization_send_goal, this));
     
         initial_guess_max_iters_ = std::getenv("INITIAL_GUESS_MAX_ITERS")
                                     ? std::stoi(std::getenv("INITIAL_GUESS_MAX_ITERS"))
                                     : 0;
+        initial_guess_seconds_between_attempts_ = std::getenv("INITIAL_GUESS_SECONDS_BETWEEN_ATTEMPTS")
+                                    ? std::stoi(std::getenv("INITIAL_GUESS_SECONDS_BETWEEN_ATTEMPTS"))
+                                    : 10;
+
+        // Initial guess action client
+        global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
+        global_localization_timer_ = create_wall_timer(std::chrono::seconds(initial_guess_seconds_between_attempts_), std::bind(&mapOptimization::global_localization_send_goal, this));
+
     }
 
     void global_localization_send_goal()
