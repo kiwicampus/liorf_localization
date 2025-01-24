@@ -175,13 +175,14 @@ def generate_launch_description():
     def reniceness_execute():
         time.sleep(10)
         print(f"Renicing map optimization node in localization")
-        cmd = "ps -eLf | grep 'liorf_localization_mapOptmization' | grep -v grep | awk '{print $4}' | xargs -r -n1 renice -20 -p"
+        cmd = "ps -eLf | grep 'liorf_localization_mapOptmization' | grep -v grep | awk '{print $4}' | xargs -r -n1 renice -20 -p 1> /dev/null"
         subprocess.call(cmd, shell=True)
 
     def reniceness_map_optimization(event: ProcessStarted, context: LaunchContext):
-        # Start a new thread to run the command
-        threading.Thread(target=reniceness_execute).start()
-    
+        # Start a new thread to run the command only if this is a restart
+        if "liorf_localization_mapOptmization" in " ".join(event.action.cmd):
+            threading.Thread(target=reniceness_execute).start()
+
     reniceness_map_optimization_event_handler = RegisterEventHandler(
         event_handler=OnProcessStart(on_start=reniceness_map_optimization)
     )
