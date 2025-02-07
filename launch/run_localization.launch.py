@@ -167,10 +167,18 @@ def generate_launch_description():
             arguments=["0", "0", "0", "0", "0", "0", "base_link", "gps"],
             output="screen",
         ))
-        launch_description.append(IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([os.path.join(
-                get_package_share_directory('location'), 'launch', 'robot_localization.launch.py')]),
+        launch_description.append(Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_transform_publisher",
+            arguments=["0", "0", "0", "0", "0", "0", "base_link", "inertial_link"],
+            output="screen",
         ))
+        # now you are meant to launch liorf through robot_localization.launch.py
+        # launch_description.append(IncludeLaunchDescription(
+        #     PythonLaunchDescriptionSource([os.path.join(
+        #         get_package_share_directory('location'), 'launch', 'robot_localization.launch.py')]),
+        # ))
 
     def reniceness_execute():
         time.sleep(10)

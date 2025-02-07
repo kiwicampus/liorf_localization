@@ -175,6 +175,9 @@ public:
     int initial_guess_seconds_between_attempts_ = 10;
     int initial_guess_iters_ = 0;
 
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr map_sub_;
+    bool use_map_server;
+
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
         ISAM2Params parameters;
@@ -240,6 +243,7 @@ public:
         global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
         global_localization_timer_ = create_wall_timer(std::chrono::seconds(initial_guess_seconds_between_attempts_), std::bind(&mapOptimization::global_localization_send_goal, this));
 
+        use_map_server = declare_parameter<bool>("use_map_server", true);
     }
 
     void global_localization_send_goal()
@@ -261,6 +265,7 @@ public:
         auto goal_msg = GlobalLocalization::Goal();
         goal_msg.trigger = true;
         goal_msg.estimate_best_map = true; // We want to estimate the best map out of the available submaps
+        goal_msg.use_gps = true;
         RCLCPP_INFO(this->get_logger(), "Sending goal");
 
         auto send_goal_options = rclcpp_action::Client<GlobalLocalization>::SendGoalOptions();
@@ -351,22 +356,61 @@ public:
     // add by yjz_lucky_boy
     void loadGlobalMap()
     {
-        std::string global_map = savePCDDirectory;
-        pcl::io::loadPCDFile<PointType>(global_map + "GlobalMap.pcd", *laserCloudSurfFromMap);
+        if (use_map_server) {
+            // Set up subscription with transient_local QoS to get the latest map
+            rclcpp::QoS map_qos(1);
+            map_qos.transient_local();
+            map_qos.reliable();
+            rclcpp::SubscriptionOptions sub_options;
+            sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;;
+
+            map_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+                "/pointcloud_map", map_qos,
+                [this](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+                    RCLCPP_INFO(get_logger(), "Received map from pointcloud map server");
+                    processReceivedMap(msg);
+                },
+                sub_options);
+            RCLCPP_INFO(get_logger(), "Waiting for map from pointcloud map server...");
+        } else {
+            // Load from file
+            std::string global_map = savePCDDirectory + "GlobalMap.pcd";
+            RCLCPP_INFO(get_logger(), "Loading map from file: %s", global_map.c_str());
+            
+            if (pcl::io::loadPCDFile<PointType>(global_map, *laserCloudSurfFromMap) == -1) {
+                RCLCPP_ERROR(get_logger(), "Failed to load PCD file: %s", global_map.c_str());
+                has_global_map = false;
+                return;
+            }
+            processLoadedMap();
+            publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, this->now(), mapFrame, false); 
+        }
+    }
+
+    void processReceivedMap(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+    {
+        pcl::fromROSMsg(*msg, *laserCloudSurfFromMap);
+        processLoadedMap();
+    }
+
+    void processLoadedMap()
+    {
         downSizeFilterLocalMapSurf.setInputCloud(laserCloudSurfFromMap);
         downSizeFilterLocalMapSurf.filter(*laserCloudSurfFromMapDS);
         laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
         std::cout << "global map size: " << laserCloudSurfFromMapDSNum << std::endl;
 
-        if (laserCloudSurfFromMapDSNum < 1000)
-          return;
+        if (laserCloudSurfFromMapDSNum < 1000) {
+            RCLCPP_WARN(get_logger(), "Map has too few points (%d < 1000)", laserCloudSurfFromMapDSNum);
+            has_global_map = false;
+            return;
+        }
         
         has_global_map = true;
 
         kdtreeSurfFromMap.setInputCloud(laserCloudSurfFromMapDS);
 
         sleep(3);
-        publishCloud(pubGlobalMap, laserCloudSurfFromMapDS, rclcpp::Time(), mapFrame, false);   
     }
 
     // add by yjz_lucky_boy
@@ -484,7 +528,10 @@ public:
     bool systemInitialize()
     {
         if (!has_global_map)
+        {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Liorf has not received global map yet.");
           return false;
+        }
 
         if(!has_initialize_pose)
         {
