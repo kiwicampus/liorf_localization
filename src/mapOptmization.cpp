@@ -177,6 +177,13 @@ public:
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr map_sub_;
     bool use_map_server;
+    // dynamic parameters
+    // Parameters callback
+    OnSetParametersCallbackHandle::SharedPtr params_callback_handle_;
+
+    float orientation_change_threshold_ = 0.02;
+    float high_orientation_covariance_ = 9999.0;
+    float prev_yaw_ = 0.0;
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
@@ -244,6 +251,32 @@ public:
         global_localization_timer_ = create_wall_timer(std::chrono::seconds(initial_guess_seconds_between_attempts_), std::bind(&mapOptimization::global_localization_send_goal, this));
 
         use_map_server = declare_parameter<bool>("use_map_server", true);
+        // dynamic parameters
+        this->declare_parameter<float>("orientation_change_threshold", orientation_change_threshold_);
+        this->declare_parameter<float>("high_orientation_covariance", high_orientation_covariance_);
+
+        this->get_parameter("orientation_change_threshold", orientation_change_threshold_);
+        this->get_parameter("high_orientation_covariance", high_orientation_covariance_);
+        params_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&mapOptimization::on_parameters_set_callback, this, std::placeholders::_1));
+    }
+
+
+    rcl_interfaces::msg::SetParametersResult on_parameters_set_callback(
+        const std::vector<rclcpp::Parameter>& parameters){
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        result.reason = "success";
+        for (const auto& param : parameters) {
+            if (param.get_name() == "orientation_change_threshold") {
+                orientation_change_threshold_ = param.as_double();
+                RCLCPP_INFO(this->get_logger(), "orientation_change_threshold updated to %f", orientation_change_threshold_);
+            }
+            else if (param.get_name() == "high_orientation_covariance") {
+                high_orientation_covariance_ = param.as_double();
+                RCLCPP_INFO(this->get_logger(), "high_orientation_covariance updated to %f", high_orientation_covariance_);
+            }
+        }
+        return result;
     }
 
     void global_localization_send_goal()
@@ -1891,14 +1924,24 @@ public:
         laserOdometryROS.pose.pose.position.x = transformTobeMapped[3];
         laserOdometryROS.pose.pose.position.y = transformTobeMapped[4];
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
-        // constrain the covariance to be published to the kalman filter with a reasonable value
         laserOdometryROS.pose.covariance = matrixToArray(poseCovariance, 5.0, 0.5);
+
         // Ref: http://wiki.ros.org/tf2/Tutorials/Migration/DataConversions
         tf2::Quaternion quat_tf;
         quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
         geometry_msgs::msg::Quaternion quat_msg;
         tf2::convert(quat_tf, quat_msg);
         laserOdometryROS.pose.pose.orientation = quat_msg;
+
+        //check change in rpy
+        if (std::abs(transformTobeMapped[2] - prev_yaw_) > orientation_change_threshold_) {
+            // high orientation covariance
+            laserOdometryROS.pose.covariance[35] = high_orientation_covariance_;
+            laserOdometryROS.pose.covariance[29] = high_orientation_covariance_;
+            laserOdometryROS.pose.covariance[23] = high_orientation_covariance_;
+        }
+        prev_yaw_ = transformTobeMapped[2];
+
         pubLaserOdometryGlobal->publish(laserOdometryROS);
         publishPoseWithCovariance(pubMapPose, laserOdometryROS.pose, timeLaserInfoStamp, mapFrame);
 
