@@ -532,20 +532,25 @@ public:
 
             downsampleCurrentScan();
 
-            if(!scan2MapOptimization())
+            bool optimization_success = scan2MapOptimization();
+            if(optimization_success)
             {
-                auto end = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed = end - start;
+                saveKeyFramesAndFactor();
+
+                correctPoses();
+
+                publishOdometry();
+
+                publishFrames();
+                msgLocalizationInfo.optimization_info.optimization_timed_out = false;
+            }
+            else
+            {
+                msgLocalizationInfo.optimization_info.optimization_timed_out = true;
                 RCLCPP_WARN(get_logger(), "Cloud handling timed out after %f seconds. dropping this scan", elapsed.count());
             }
 
-            saveKeyFramesAndFactor();
 
-            correctPoses();
-
-            publishOdometry();
-
-            publishFrames();
             // End time measurement
             auto end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = end - start;
