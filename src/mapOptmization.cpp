@@ -505,7 +505,6 @@ public:
     void laserCloudInfoHandler(const liorf_localization::msg::CloudInfo::SharedPtr msgIn)
     {
         // extract time stamp
-        auto start = std::chrono::high_resolution_clock::now();
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = ROS_TIME(msgIn->header.stamp);
 
@@ -532,6 +531,7 @@ public:
 
             downsampleCurrentScan();
 
+            auto start = std::chrono::high_resolution_clock::now();
             bool optimization_success = scan2MapOptimization();
             if(optimization_success)
             {
@@ -547,7 +547,8 @@ public:
             else
             {
                 msgLocalizationInfo.optimization_info.optimization_timed_out = true;
-                RCLCPP_WARN(get_logger(), "Cloud handling timed out after %f seconds. dropping this scan", elapsed.count());
+                auto end = std::chrono::high_resolution_clock::now();
+                RCLCPP_WARN(get_logger(), "Cloud handling timed out after %f seconds. dropping this scan", (end - start).count());
             }
 
 
