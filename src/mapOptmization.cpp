@@ -3,7 +3,7 @@
 #include "liorf_localization/msg/cloud_info.hpp"
 #include "liorf_localization/msg/localization_info.hpp"
 #include "liorf_localization/srv/save_map.hpp"
-#include "initial_pose_interfaces/action/global_localization.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -21,6 +21,8 @@
 
 #include <GeographicLib/Geocentric.hpp>
 #include <GeographicLib/LocalCartesian.hpp>
+
+#include "initial_pose_interfaces/srv/set_initial_pose.hpp"
 
 using namespace gtsam;
 
@@ -56,8 +58,6 @@ class mapOptimization : public ParamServer
 {
 
 public:
-    using GlobalLocalization = initial_pose_interfaces::action::GlobalLocalization;
-    using GoalHandleGlobalLocalization = rclcpp_action::ClientGoalHandle<GlobalLocalization>;
     // gtsam
     NonlinearFactorGraph gtSAMgraph;
     Values initialEstimate;
@@ -88,12 +88,10 @@ public:
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubMapPose;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGpsPose;
     rclcpp::Publisher<liorf_localization::msg::LocalizationInfo>::SharedPtr pubLocalizationInfo;
+    rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr pubLocalizationRestored;
     liorf_localization::msg::LocalizationInfo msgLocalizationInfo;
 
     rclcpp::Service<liorf_localization::srv::SaveMap>::SharedPtr srvSaveMap;
-
-    rclcpp_action::Client<GlobalLocalization>::SharedPtr global_localization_client_ptr_;
-    rclcpp::TimerBase::SharedPtr global_localization_timer_;
 
     std::deque<nav_msgs::msg::Odometry> gpsQueue;
     liorf_localization::msg::CloudInfo cloudInfo;
@@ -185,6 +183,8 @@ public:
     float high_orientation_covariance_ = 9999.0;
     float prev_yaw_ = 0.0;
 
+    rclcpp::Service<initial_pose_interfaces::srv::SetInitialPose>::SharedPtr srv_set_initial_pose_;
+
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_localization_mapOptimization", options)
     {
         ISAM2Params parameters;
@@ -217,6 +217,7 @@ public:
         pubMapPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/map_pose", QosPolicy(history_policy, reliability_policy));
         pubGpsPose = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf_localization/mapping/gps_pose", QosPolicy(history_policy, reliability_policy));
         pubLocalizationInfo = create_publisher<liorf_localization::msg::LocalizationInfo>("liorf_localization/mapping/localization_info", QosPolicy(history_policy, reliability_policy));
+        pubLocalizationRestored = create_publisher<std_msgs::msg::Empty>("liorf_localization/mapping/localization_restored", QosPolicy(history_policy, reliability_policy));
 
         rclcpp::PublisherOptionsWithAllocator<std::allocator<void>> pub_options;
         pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
@@ -247,9 +248,6 @@ public:
                                     : 10;
 
         // Initial guess action client
-        global_localization_client_ptr_ = rclcpp_action::create_client<GlobalLocalization>(this, "global_localization");
-        global_localization_timer_ = create_wall_timer(std::chrono::seconds(initial_guess_seconds_between_attempts_), std::bind(&mapOptimization::global_localization_send_goal, this));
-
         use_map_server = declare_parameter<bool>("use_map_server", true);
         // dynamic parameters
         this->declare_parameter<float>("orientation_change_threshold", orientation_change_threshold_);
@@ -258,6 +256,13 @@ public:
         this->get_parameter("orientation_change_threshold", orientation_change_threshold_);
         this->get_parameter("high_orientation_covariance", high_orientation_covariance_);
         params_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&mapOptimization::on_parameters_set_callback, this, std::placeholders::_1));
+
+        srv_set_initial_pose_ = create_service<initial_pose_interfaces::srv::SetInitialPose>(
+            "set_initial_pose",
+            std::bind(&mapOptimization::setInitialPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
+        
+        livox_to_base_link_ = Eigen::Matrix4f::Identity();
+        base_link_to_livox_ = Eigen::Matrix4f::Identity();
     }
 
 
@@ -277,79 +282,6 @@ public:
             }
         }
         return result;
-    }
-
-    void global_localization_send_goal()
-    {
-        if(initial_guess_max_iters_ > 0 && initial_guess_iters_ >= initial_guess_max_iters_)
-        {
-            RCLCPP_WARN(this->get_logger(), "Initial guess max iterations reached, stopping global localization");
-            global_localization_timer_->cancel();
-            return;
-        }
-        initial_guess_iters_++;
-        global_localization_timer_->cancel();
-        if (!global_localization_client_ptr_->wait_for_action_server(std::chrono::seconds(1))) {
-            RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
-            global_localization_timer_->reset();
-            return;
-            // rclcpp::shutdown();
-        }
-        auto goal_msg = GlobalLocalization::Goal();
-        goal_msg.trigger = true;
-        goal_msg.estimate_best_map = true; // We want to estimate the best map out of the available submaps
-        goal_msg.use_gps = true;
-        RCLCPP_INFO(this->get_logger(), "Sending goal");
-
-        auto send_goal_options = rclcpp_action::Client<GlobalLocalization>::SendGoalOptions();
-        // send_goal_options.goal_response_callback = std::bind(&mapOptimization::global_loc_goal_response_callback, this, std::placeholders::_1);
-        send_goal_options.goal_response_callback = std::bind(&mapOptimization::global_loc_goal_response_callback, this, std::placeholders::_1);
-        send_goal_options.feedback_callback = std::bind(&mapOptimization::global_loc_feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
-        send_goal_options.result_callback = std::bind(&mapOptimization::global_loc_result_callback, this, std::placeholders::_1);
-        global_localization_client_ptr_->async_send_goal(goal_msg, send_goal_options);
-    }
-
-    void global_loc_goal_response_callback(const rclcpp_action::ClientGoalHandle<GlobalLocalization>::SharedPtr & goal)
-    {
-        if(!goal){
-            RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
-            global_localization_timer_->reset();
-
-        }
-    }
-
-    void global_loc_feedback_callback(
-        GoalHandleGlobalLocalization::SharedPtr,
-        const std::shared_ptr<const GlobalLocalization::Feedback> feedback)
-    {
-        RCLCPP_INFO(this->get_logger(), "Received feedback: %d", feedback->status);
-    }
-
-    void global_loc_result_callback(const GoalHandleGlobalLocalization::WrappedResult & result)
-    {
-        switch (result.code) {
-        case rclcpp_action::ResultCode::SUCCEEDED:
-            break;
-        case rclcpp_action::ResultCode::ABORTED:
-            RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
-            if (result.result->best_score == -1)
-            {
-                // TODO: deal with this
-                RCLCPP_ERROR(this->get_logger(), "No valid .pcd map files in /data/global_loc_target");
-            }
-            global_localization_timer_->reset();
-            return;
-        case rclcpp_action::ResultCode::CANCELED:
-            RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
-            global_localization_timer_->reset();
-            return;
-        default:
-            RCLCPP_ERROR(this->get_logger(), "Unknown result code");
-            global_localization_timer_->reset();
-            return;
-        }
-        RCLCPP_INFO(this->get_logger(), "Result received");
-        RCLCPP_INFO(this->get_logger(), "Best score: %f, elapsed time: %f", result.result->best_score, result.result->elapsed_time);
     }
 
     void allocateMemory()
@@ -510,14 +442,15 @@ public:
 
         // extract info and feature cloud
         cloudInfo = *msgIn;
-        pcl::fromROSMsg(msgIn->cloud_deskewed, *laserCloudSurfLast);
 
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx);  // Lock for the entire handler
 
         static double timeLastProcessing = -1;
         if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)
         {
             timeLastProcessing = timeLaserInfoCur;
+
+            pcl::fromROSMsg(msgIn->cloud_deskewed, *laserCloudSurfLast);
 
             adjustForRotation();
 
@@ -568,14 +501,16 @@ public:
     {
         if (!has_global_map)
         {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Liorf has not received global map yet.");
-          return false;
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Liorf has not received global map yet.");
+            return false;
         }
 
         if(!has_initialize_pose)
         {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
-          return false;
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
+            msgLocalizationInfo.initial_pose_accepted = false;
+            publishThrottle<liorf_localization::msg::LocalizationInfo>(pubLocalizationInfo, msgLocalizationInfo, 10.0);
+            return false;
         }
 
         static pcl::IterativeClosestPoint<PointType, PointType> icp;
@@ -587,9 +522,14 @@ public:
 
         Eigen::Affine3f initialize_affine = trans2Affine3f(initialize_pose);
 
+        std::cout << "initialize_affine: \n" << initialize_affine.matrix() << std::endl;
+
         pcl::PointCloud<PointType>::Ptr out_cloud(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr result(new pcl::PointCloud<PointType>());
         pcl::transformPointCloud(*laserCloudSurfLast, *out_cloud, initialize_affine);
+
+        std::cout << "average x in transformed point cloud: " << out_cloud->points[out_cloud->size() / 2].x << " and average x in original point cloud: " << laserCloudSurfLast->points[laserCloudSurfLast->size() / 2].x << std::endl;
+        
         // Align clouds
         icp.setInputSource(out_cloud);
         icp.setInputTarget(laserCloudSurfFromMapDS);
@@ -617,6 +557,10 @@ public:
         {
             RCLCPP_INFO(get_logger(), "initialize pose sucessful");
             system_initialized = true;
+            msgLocalizationInfo.initial_pose_accepted = true;
+            RCLCPP_INFO(get_logger(), "initializing pose accepted, original pose: %f, %f, yaw: %f, refined pose: %f, %f, yaw: %f. used pointcloud with %d points", 
+                        initialize_pose[3], initialize_pose[4], initialize_pose[2], x, y, yaw, laserCloudSurfLast->size());
+            pubLocalizationRestored->publish(std_msgs::msg::Empty());
             return true;
         } 
         else
@@ -624,8 +568,6 @@ public:
             RCLCPP_ERROR(get_logger(), "initialize pose failed");
             has_initialize_pose = false;
             system_initialized = false;
-            // Try to initialize pose again
-            global_localization_timer_->reset();
             return false;
         }
     }
@@ -2071,6 +2013,44 @@ public:
                 // pubSLAMInfo.publish(slamInfo);
                 // lastSLAMInfoPubSize = cloudKeyPoses6D->size();
             }
+        }
+    }
+
+    template<typename T>
+    bool publishThrottle(const typename rclcpp::Publisher<T>::SharedPtr& pub, const T& msg, double min_interval)
+    {
+        static std::unordered_map<std::string, rclcpp::Time> last_pub_time;
+        auto now = this->now();
+        auto topic = pub->get_topic_name();
+        if (last_pub_time.find(topic) == last_pub_time.end()) {
+            last_pub_time[topic] = now - rclcpp::Duration::from_seconds(min_interval);
+        }
+        if ((now - last_pub_time[topic]).seconds() >= min_interval) {
+            pub->publish(msg);
+            last_pub_time[topic] = now;
+            return true;
+        }
+        return false;
+    }
+
+    void setInitialPoseCallback(
+        const std::shared_ptr<initial_pose_interfaces::srv::SetInitialPose::Request> request,
+        std::shared_ptr<initial_pose_interfaces::srv::SetInitialPose::Response> response)
+    {
+        std::lock_guard<std::mutex> lock(mtx);  // Lock for the entire callback
+        
+        auto pose_msg = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>(request->pose);
+        initialposeHandler(pose_msg);
+
+        if (systemInitialize())
+        {
+            response->success = true;
+            response->message = "Initial pose set and initialization successful";
+        }
+        else
+        {
+            response->success = false;
+            response->message = "Initial pose set but initialization failed";
         }
     }
 };

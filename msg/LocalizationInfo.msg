@@ -1,4 +1,5 @@
 std_msgs/Header header
+bool initial_pose_accepted
 geometry_msgs/PoseWithCovariance map_pose
 int32 tracked_features
 liorf_localization/OptimizationInfo optimization_info
