@@ -136,7 +136,7 @@ public:
     std::mutex mtxLoopInfo;
 
     bool isDegenerate = false;
-    cv::Mat matP;
+    Eigen::MatrixXf matP;
 
     int laserCloudSurfFromMapDSNum = 0;
     int laserCloudSurfLastDSNum = 0;
@@ -182,6 +182,7 @@ public:
     float orientation_change_threshold_ = 0.02;
     float high_orientation_covariance_ = 9999.0;
     float prev_yaw_ = 0.0;
+    float icp_fitness_score_threshold_ = 0.9;
 
     rclcpp::Service<initial_pose_interfaces::srv::SetInitialPose>::SharedPtr srv_set_initial_pose_;
 
@@ -252,9 +253,11 @@ public:
         // dynamic parameters
         this->declare_parameter<float>("orientation_change_threshold", orientation_change_threshold_);
         this->declare_parameter<float>("high_orientation_covariance", high_orientation_covariance_);
+        this->declare_parameter<float>("icp_fitness_score_threshold", icp_fitness_score_threshold_);
 
         this->get_parameter("orientation_change_threshold", orientation_change_threshold_);
         this->get_parameter("high_orientation_covariance", high_orientation_covariance_);
+        this->get_parameter("icp_fitness_score_threshold", icp_fitness_score_threshold_);
         params_callback_handle_ = this->add_on_set_parameters_callback(std::bind(&mapOptimization::on_parameters_set_callback, this, std::placeholders::_1));
 
         srv_set_initial_pose_ = create_service<initial_pose_interfaces::srv::SetInitialPose>(
@@ -279,6 +282,10 @@ public:
             else if (param.get_name() == "high_orientation_covariance") {
                 high_orientation_covariance_ = param.as_double();
                 RCLCPP_INFO(this->get_logger(), "high_orientation_covariance updated to %f", high_orientation_covariance_);
+            }
+            else if (param.get_name() == "icp_fitness_score_threshold") {
+                icp_fitness_score_threshold_ = param.as_double();
+                RCLCPP_INFO(this->get_logger(), "icp_fitness_score_threshold updated to %f", icp_fitness_score_threshold_);
             }
         }
         return result;
@@ -315,7 +322,7 @@ public:
             transformTobeMapped[i] = 0;
         }
 
-        matP = cv::Mat(6, 6, CV_32F, cv::Scalar::all(0));
+        matP = Eigen::MatrixXf::Zero(6, 6);
     }
 
     // add by yjz_lucky_boy
@@ -553,7 +560,10 @@ public:
         *cloudOut += *transformPointCloud(laserCloudSurfLast, &thisPose6D);
         publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, mapFrame);
 
-        if (icp.hasConverged() && icp.getFitnessScore() < 0.3)
+        RCLCPP_INFO(get_logger(), "icp.hasConverged(): %d", icp.hasConverged());
+        RCLCPP_INFO(get_logger(), "icp.getFitnessScore(): %f", icp.getFitnessScore());
+
+        if (icp.hasConverged() && icp.getFitnessScore() < icp_fitness_score_threshold_)
         {
             RCLCPP_INFO(get_logger(), "initialize pose sucessful");
             system_initialized = true;
@@ -1383,12 +1393,12 @@ public:
             return false;
         }
 
-        cv::Mat matA(laserCloudSelNum, 6, CV_32F, cv::Scalar::all(0));
-        cv::Mat matAt(6, laserCloudSelNum, CV_32F, cv::Scalar::all(0));
-        cv::Mat matAtA(6, 6, CV_32F, cv::Scalar::all(0));
-        cv::Mat matB(laserCloudSelNum, 1, CV_32F, cv::Scalar::all(0));
-        cv::Mat matAtB(6, 1, CV_32F, cv::Scalar::all(0));
-        cv::Mat matX(6, 1, CV_32F, cv::Scalar::all(0));
+        Eigen::MatrixXf matA = Eigen::MatrixXf::Zero(laserCloudSelNum, 6);
+        Eigen::MatrixXf matAt = Eigen::MatrixXf::Zero(6, laserCloudSelNum);
+        Eigen::MatrixXf matAtA = Eigen::MatrixXf::Zero(6, 6);
+        Eigen::VectorXf matB = Eigen::VectorXf::Zero(laserCloudSelNum);
+        Eigen::VectorXf matAtB = Eigen::VectorXf::Zero(6);
+        Eigen::VectorXf matX = Eigen::VectorXf::Zero(6);
 
         PointType pointOri, coeff;
 
@@ -1429,73 +1439,74 @@ public:
                       + (cry * crz * pointOri.y - cry * srz * pointOri.z) * coeff.z;
 
             // camera -> lidar
-            matA.at<float>(i, 0) = arz;
-            matA.at<float>(i, 1) = ary;
-            matA.at<float>(i, 2) = arx;
-            matA.at<float>(i, 3) = coeff.x;
-            matA.at<float>(i, 4) = coeff.y;
-            matA.at<float>(i, 5) = coeff.z;
-            matB.at<float>(i, 0) = -coeff.intensity;
+            matA(i, 0) = arz;
+            matA(i, 1) = ary;
+            matA(i, 2) = arx;
+            matA(i, 3) = coeff.x;
+            matA(i, 4) = coeff.y;
+            matA(i, 5) = coeff.z;
+            matB(i) = -coeff.intensity;
         }
 
-        cv::transpose(matA, matAt);
+        matAt = matA.transpose();
         matAtA = matAt * matA;
         matAtB = matAt * matB;
-        cv::solve(matAtA, matAtB, matX, cv::DECOMP_QR);
+        matX = matAtA.colPivHouseholderQr().solve(matAtB);
 
         if (iterCount == 0) {
 
-            cv::Mat matE(1, 6, CV_32F, cv::Scalar::all(0));
-            cv::Mat matV(6, 6, CV_32F, cv::Scalar::all(0));
-            cv::Mat matV2(6, 6, CV_32F, cv::Scalar::all(0));
+            Eigen::VectorXf matE = Eigen::VectorXf::Zero(6);
+            Eigen::MatrixXf matV = Eigen::MatrixXf::Zero(6, 6);
+            Eigen::MatrixXf matV2 = Eigen::MatrixXf::Zero(6, 6);
 
-            cv::eigen(matAtA, matE, matV);
-            matV.copyTo(matV2);
+            Eigen::SelfAdjointEigenSolver<Eigen::MatrixXf> eig(matAtA);
+            matE = eig.eigenvalues().real();
+            matV = eig.eigenvectors().real();
+            matV2 = matV;
 
             isDegenerate = false;
             float eignThre[6] = {100, 100, 100, 100, 100, 100};
             for (int i = 5; i >= 0; i--) {
-                if (matE.at<float>(0, i) < eignThre[i]) {
+                if (matE(i) < eignThre[i]) {
                     for (int j = 0; j < 6; j++) {
-                        matV2.at<float>(i, j) = 0;
+                        matV2(i, j) = 0;
                     }
                     isDegenerate = true;
                 } else {
                     break;
                 }
             }
-            matP = matV.inv() * matV2;
+            matP = matV.inverse() * matV2;
         }
 
         if (isDegenerate)
         {
-            cv::Mat matX2(6, 1, CV_32F, cv::Scalar::all(0));
-            matX.copyTo(matX2);
-            matX = matP * matX2;
+            Eigen::VectorXf matX2 = Eigen::VectorXf::Zero(6);
+            matX2 = matP * matX;
+            matX = matX2;
         }
 
-        transformTobeMapped[0] += matX.at<float>(0, 0);
-        transformTobeMapped[1] += matX.at<float>(1, 0);
-        transformTobeMapped[2] += matX.at<float>(2, 0);
-        transformTobeMapped[3] += matX.at<float>(3, 0);
-        transformTobeMapped[4] += matX.at<float>(4, 0);
-        transformTobeMapped[5] += matX.at<float>(5, 0);
+        transformTobeMapped[0] += matX(0);
+        transformTobeMapped[1] += matX(1);
+        transformTobeMapped[2] += matX(2);
+        transformTobeMapped[3] += matX(3);
+        transformTobeMapped[4] += matX(4);
+        transformTobeMapped[5] += matX(5);
 
         // Compute the residual vector
-        cv::Mat matR = matA * matX + matB;
+        Eigen::VectorXf matR = matA * matX + matB;
 
         // Calculate the RMSE
-        cv::Scalar residualSumSquares = cv::sum(matR.mul(matR));
-        double rmse = sqrt(residualSumSquares[0] / matR.rows);
+        double rmse = sqrt(matR.squaredNorm() / matR.size());
 
         float deltaR = sqrt(
-                            pow(pcl::rad2deg(matX.at<float>(0, 0)), 2) +
-                            pow(pcl::rad2deg(matX.at<float>(1, 0)), 2) +
-                            pow(pcl::rad2deg(matX.at<float>(2, 0)), 2));
+                            pow(pcl::rad2deg(matX(0)), 2) +
+                            pow(pcl::rad2deg(matX(1)), 2) +
+                            pow(pcl::rad2deg(matX(2)), 2));
         float deltaT = sqrt(
-                            pow(matX.at<float>(3, 0) * 100, 2) +
-                            pow(matX.at<float>(4, 0) * 100, 2) +
-                            pow(matX.at<float>(5, 0) * 100, 2));
+                            pow(matX(3) * 100, 2) +
+                            pow(matX(4) * 100, 2) +
+                            pow(matX(5) * 100, 2));
 
         msgLocalizationInfo.optimization_info.optimization_residuals_rmse = rmse;
         msgLocalizationInfo.optimization_info.optimization_delta_r = deltaR;

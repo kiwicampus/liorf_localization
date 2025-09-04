@@ -33,7 +33,7 @@
     Horizon_SCAN: 4000                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
     downsampleRate: 1                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
     point_filter_num: 2                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
-    lidarMinRange: 0.7                          # default: 1.0, minimum lidar range to be used
+    lidarMinRange: 0.5                          # default: 1.0, minimum lidar range to be used
     lidarMaxRange: 100.0                       # default: 1000.0, maximum lidar range to be used
 
     # IMU Settings
@@ -79,7 +79,7 @@
     #                 0, 0, 1]
 
     # voxel filter paprams
-    mappingSurfLeafSize: 0.3                       # default: 0.4 - outdoor, 0.2 - indoor
+    mappingSurfLeafSize: 0.2                       # default: 0.4 - outdoor, 0.2 - indoor
 
     # robot motion constraint (in case you are using a 2D robot)
     z_tollerance: 1000.0                            # meters
@@ -122,3 +122,6 @@
     mappingLmConvergenceRot: 0.07
     mappingProcessingTimeoutMs: 200
     maxNumOptimizationIterations: 24
+    
+    # ICP initialization parameters
+    icp_fitness_score_threshold: 0.5

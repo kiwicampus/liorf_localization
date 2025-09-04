@@ -16,18 +16,43 @@ from launch.event_handlers.on_process_start import OnProcessStart
 from launch.actions import RegisterEventHandler
 from launch.launch_context import LaunchContext
 
+# Try to import GcpOrLocalParamsFile, fall back to None if not available
+try:
+    from python_utils.launch_utils import GcpOrLocalParamsFile
+    GCP_OR_LOCAL_AVAILABLE = True
+except ImportError:
+    GcpOrLocalParamsFile = None
+    GCP_OR_LOCAL_AVAILABLE = False
+
 def generate_launch_description():
     share_dir = get_package_share_directory("liorf_localization")
-    parameter_file = LaunchConfiguration("liorf_params_file")
+    
+    # Use GcpOrLocalParamsFile if available, otherwise use LaunchConfiguration
+    if GCP_OR_LOCAL_AVAILABLE:
+        # Use GcpOrLocalParamsFile to handle parameter file loading
+        gcp_params = GcpOrLocalParamsFile(
+            env_var_name="LIORF_PARAMS_FILE",
+            default_file_path=os.path.join(share_dir, "config", "localization.yaml")
+        )
+        parameter_file = gcp_params.local_file_path
+        # Still declare the launch argument for backward compatibility
+        params_declare = DeclareLaunchArgument(
+            "liorf_params_file",
+            default_value=parameter_file,
+            description="Path to the ROS2 parameters file to use.",
+        )
+    else:
+        # Fall back to original LaunchConfiguration approach
+        parameter_file = LaunchConfiguration("liorf_params_file")
+        params_declare = DeclareLaunchArgument(
+            "liorf_params_file",
+            default_value=os.path.join(share_dir, "config", "localization.yaml"),
+            description="Path to the ROS2 parameters file to use.",
+        )
+    
     rviz_config_file = os.path.join(share_dir, "rviz", "localization.rviz")
     use_rviz = LaunchConfiguration("use_rviz")
     scale_livox_imu = LaunchConfiguration("scale_livox_imu")
-
-    params_declare = DeclareLaunchArgument(
-        "liorf_params_file",
-        default_value=os.path.join(share_dir, "config", "localization.yaml"),
-        description="Path to the ROS2 parameters file to use.",
-    )
 
     rviz_declare = DeclareLaunchArgument(
         "use_rviz",
