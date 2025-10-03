@@ -537,9 +537,37 @@ public:
 
         std::cout << "average x in transformed point cloud: " << out_cloud->points[out_cloud->size() / 2].x << " and average x in original point cloud: " << laserCloudSurfLast->points[laserCloudSurfLast->size() / 2].x << std::endl;
         
-        // Align clouds
+        // Crop the reference map around the target pose for faster ICP alignment
+        pcl::PointCloud<PointType>::Ptr cropped_map(new pcl::PointCloud<PointType>());
+        pcl::CropBox<PointType> crop_box;
+        
+        // Set crop box around the target pose (initialize_pose[3], initialize_pose[4], initialize_pose[5])
+        // Use surroundingKeyframeSearchRadius as the crop radius
+        float crop_radius = surroundingKeyframeSearchRadius;
+        float min_x = initialize_pose[3] - crop_radius;
+        float max_x = initialize_pose[3] + crop_radius;
+        float min_y = initialize_pose[4] - crop_radius;
+        float max_y = initialize_pose[4] + crop_radius;
+        float min_z = initialize_pose[5] - crop_radius;
+        float max_z = initialize_pose[5] + crop_radius;
+        
+        crop_box.setMin(Eigen::Vector4f(min_x, min_y, min_z, 1.0));
+        crop_box.setMax(Eigen::Vector4f(max_x, max_y, max_z, 1.0));
+        crop_box.setInputCloud(laserCloudSurfFromMapDS);
+        crop_box.filter(*cropped_map);
+        
+        RCLCPP_INFO(get_logger(), "Cropped map from %d to %d points (radius: %.1f m)", 
+                   laserCloudSurfFromMapDS->size(), cropped_map->size(), crop_radius);
+        
+        // Check if we have enough points in the cropped map
+        if (cropped_map->size() < 1000) {
+            RCLCPP_WARN(get_logger(), "Cropped map has too few points (%d < 1000), using full map", cropped_map->size());
+            cropped_map = laserCloudSurfFromMapDS; // Fallback to full map
+        }
+        
+        // Align clouds using the cropped map
         icp.setInputSource(out_cloud);
-        icp.setInputTarget(laserCloudSurfFromMapDS);
+        icp.setInputTarget(cropped_map);
         icp.align(*result);
 
         Eigen::Affine3f correctionLidarFrame;
