@@ -162,6 +162,10 @@ public:
     bool has_initialize_pose = false;
     bool system_initialized = false;
     float initialize_pose[6];
+    
+    // Map deduplication
+    size_t last_map_size_ = 0;
+    size_t last_map_hash_ = 0;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -221,8 +225,9 @@ public:
         pubLocalizationRestored = create_publisher<std_msgs::msg::Empty>("liorf_localization/mapping/localization_restored", QosPolicy(history_policy, reliability_policy));
 
         rclcpp::PublisherOptionsWithAllocator<std::allocator<void>> pub_options;
-        pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", rclcpp::QoS(10).transient_local(), pub_options);
+        pub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Enable;
+        // Using volatile durability (default) to enable intra-process communication
+        pubGlobalMap = create_publisher<sensor_msgs::msg::PointCloud2>("liorf_localization/localization/global_map", rclcpp::QoS(10).reliable(), pub_options);
 
 
         br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
@@ -329,12 +334,12 @@ public:
     void loadGlobalMap()
     {
         if (use_map_server) {
-            // Set up subscription with transient_local QoS to get the latest map
+            // Set up subscription with volatile durability (default) to enable intra-process communication
+            // The map server will auto-republish when this subscriber joins
             rclcpp::QoS map_qos(1);
-            map_qos.transient_local();
             map_qos.reliable();
             rclcpp::SubscriptionOptions sub_options;
-            sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;;
+            sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Enable;
 
             map_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
                 "/pointcloud_map", map_qos,
@@ -361,6 +366,22 @@ public:
 
     void processReceivedMap(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
+        // Check if this is the same map we already have (deduplication)
+        size_t current_size = msg->width * msg->height;
+        size_t current_hash = std::hash<std::string>{}(
+            std::string(reinterpret_cast<const char*>(msg->data.data()), 
+                       std::min(msg->data.size(), size_t(1024)))  // Hash first 1KB for speed
+        );
+        
+        if (has_global_map && current_size == last_map_size_ && current_hash == last_map_hash_) {
+            RCLCPP_DEBUG(get_logger(), "Received identical map, skipping reprocessing");
+            return;
+        }
+        
+        RCLCPP_INFO(get_logger(), "Processing new map (size: %zu points)", current_size);
+        last_map_size_ = current_size;
+        last_map_hash_ = current_hash;
+        
         pcl::fromROSMsg(*msg, *laserCloudSurfFromMap);
         processLoadedMap();
     }
@@ -2093,6 +2114,11 @@ public:
         }
     }
 };
+
+#include "rclcpp_components/register_node_macro.hpp"
+
+// Register the component with class_loader
+RCLCPP_COMPONENTS_REGISTER_NODE(mapOptimization)
 
 int main(int argc, char** argv)
 {

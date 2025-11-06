@@ -5,11 +5,12 @@ import threading
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, IncludeLaunchDescription, GroupAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, LoadComposableNodes
+from launch_ros.descriptions import ComposableNode
 
 from launch.events.process.process_started import ProcessStarted
 from launch.event_handlers.on_process_start import OnProcessStart
@@ -18,14 +19,20 @@ from launch.launch_context import LaunchContext
 
 # Try to import GcpOrLocalParamsFile, fall back to None if not available
 try:
-    from python_utils.launch_utils import GcpOrLocalParamsFile
+    from python_utils.launch_utils import GcpOrLocalParamsFile, parse_bool2string
     GCP_OR_LOCAL_AVAILABLE = True
 except ImportError:
     GcpOrLocalParamsFile = None
+    parse_bool2string = lambda x: str(bool(x)).lower()
     GCP_OR_LOCAL_AVAILABLE = False
 
 def generate_launch_description():
     share_dir = get_package_share_directory("liorf_localization")
+    
+    # Launch arguments
+    use_composition = LaunchConfiguration("use_composition")
+    container_name = LaunchConfiguration("container_name")
+    use_respawn = LaunchConfiguration("use_respawn")
     
     # Use GcpOrLocalParamsFile if available, otherwise use LaunchConfiguration
     if GCP_OR_LOCAL_AVAILABLE:
@@ -76,34 +83,83 @@ def generate_launch_description():
     if local_launch:
         os.environ["LIDAR_LOCALIZATION"] = '1'
 
+    # Composable nodes for ImageProjection and mapOptimization
+    composable_liorf_nodes = LoadComposableNodes(
+        target_container=container_name,
+        composable_node_descriptions=[
+            ComposableNode(
+                package="liorf_localization",
+                plugin="ImageProjection",
+                name="liorf_localization_imageProjection",
+                parameters=[parameter_file],
+                remappings=[
+                    ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}],
+            ),
+            ComposableNode(
+                package="liorf_localization",
+                plugin="mapOptimization",
+                name="liorf_localization_mapOptmization",
+                parameters=[parameter_file],
+                remappings=[
+                    ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}],
+            ),
+        ],
+        condition=IfCondition(use_composition),
+    )
+
+    # Standalone nodes (when composition is disabled)
+    standalone_image_projection = Node(
+        package="liorf_localization",
+        executable="liorf_localization_imageProjection",
+        name="liorf_localization_imageProjection",
+        parameters=[parameter_file],
+        output="screen",
+        respawn=respawn_nodes,
+        respawn_delay=respawn_delay,
+        remappings=[
+            ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+        ],
+        condition=UnlessCondition(use_composition),
+    )
+    
+    standalone_map_optimization = Node(
+        package="liorf_localization",
+        executable="liorf_localization_mapOptmization",
+        name="liorf_localization_mapOptmization",
+        parameters=[parameter_file],
+        output="screen",
+        respawn=respawn_nodes,
+        respawn_delay=respawn_delay,
+        remappings=[
+            ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+        ],
+        condition=UnlessCondition(use_composition),
+    )
+    
     launch_description = [
+        # Launch arguments
+        DeclareLaunchArgument(
+            "use_composition",
+            default_value="false",
+            description="Whether to use node composition for liorf nodes",
+        ),
+        DeclareLaunchArgument(
+            "container_name",
+            default_value="localization_container",
+            description="Name of the container to load composable nodes into",
+        ),
         params_declare,
         rviz_declare,
         livox_scale_imu_declare,
-        Node(
-            package="liorf_localization",
-            executable="liorf_localization_imageProjection",
-            name="liorf_localization_imageProjection",
-            parameters=[parameter_file],
-            output="screen",
-            respawn=respawn_nodes,
-            respawn_delay=respawn_delay,
-            remappings=[
-                ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
-            ],
-        ),
-        Node(
-            package="liorf_localization",
-            executable="liorf_localization_mapOptmization",
-            name="liorf_localization_mapOptmization",
-            parameters=[parameter_file],
-            output="screen",
-            respawn=respawn_nodes,
-            respawn_delay=respawn_delay,
-            remappings=[
-                ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
-            ],
-        ),
+        # Composable nodes
+        composable_liorf_nodes,
+        # Standalone nodes
+        standalone_image_projection,
+        standalone_map_optimization,
         # Node(
         #     package="liorf_localization",
         #     executable="liorf_localization_wheelOdomPreintegration",

@@ -640,6 +640,11 @@ class ImageProjection : public ParamServer
     }
 };
 
+#include "rclcpp_components/register_node_macro.hpp"
+
+// Register the component with class_loader
+RCLCPP_COMPONENTS_REGISTER_NODE(ImageProjection)
+
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);

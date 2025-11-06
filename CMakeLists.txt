@@ -10,6 +10,7 @@ include(cmake/rosidl_get_typesupport_target.cmake)
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -35,7 +36,7 @@ find_package(Boost REQUIRED COMPONENTS timer)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
 find_package(GeographicLib REQUIRED)
 
-set(ros2_lib "rclcpp;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs;initial_pose_interfaces")
+set(ros2_lib "rclcpp;rclcpp_components;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs;initial_pose_interfaces")
 
 rosidl_generate_interfaces(${PROJECT_NAME} 
   "msg/CloudInfo.msg"
@@ -73,26 +74,47 @@ file(GLOB common_lib "lib/*.cpp")
 ## Build ##
 ###########
 # <!-- liorf_localization_yjz_lucky_boy -->
-# Range Image Projection
-add_executable(${PROJECT_NAME}_imageProjection src/imageProjection.cpp ${common_lib})
-ament_target_dependencies(${PROJECT_NAME}_imageProjection ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imageProjection "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
-# # Mapping Optimization
-add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp ${common_lib})
+# Create a common library for shared code
+add_library(liorf_common SHARED ${common_lib})
+ament_target_dependencies(liorf_common ${ros2_lib})
+target_link_libraries(liorf_common "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+
+# Image Projection Component Library
+set(image_projection_library_name liorf_localization_imageProjection_core)
+add_library(${image_projection_library_name} SHARED src/imageProjection.cpp)
+ament_target_dependencies(${image_projection_library_name} ${ros2_lib})
+target_link_libraries(${image_projection_library_name} liorf_common "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+rclcpp_components_register_nodes(${image_projection_library_name} "ImageProjection")
+
+# Image Projection Standalone Executable
+add_executable(${PROJECT_NAME}_imageProjection src/imageProjection.cpp)
+ament_target_dependencies(${PROJECT_NAME}_imageProjection ${ros2_lib})
+target_link_libraries(${PROJECT_NAME}_imageProjection liorf_common "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+
+# Map Optimization Component Library
+set(map_optimization_library_name liorf_localization_mapOptmization_core)
+add_library(${map_optimization_library_name} SHARED src/mapOptmization.cpp)
+target_compile_options(${map_optimization_library_name} PRIVATE ${OpenMP_CXX_FLAGS})
+ament_target_dependencies(${map_optimization_library_name} ${ros2_lib})
+target_link_libraries(${map_optimization_library_name} liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+rclcpp_components_register_nodes(${map_optimization_library_name} "mapOptimization")
+
+# Map Optimization Standalone Executable
+add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp)
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
 ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
 
-# # IMU Preintegration
-add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})
+# IMU Preintegration - Regular Executable (not a component)
+add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp)
 ament_target_dependencies(${PROJECT_NAME}_imuPreintegration ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imuPreintegration Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_imuPreintegration liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
-# WheelOdom Preintegration
-add_executable(${PROJECT_NAME}_wheelOdomPreintegration src/wheelOdomPreintegration.cpp ${common_lib})
+# WheelOdom Preintegration - Regular Executable (not a component)
+add_executable(${PROJECT_NAME}_wheelOdomPreintegration src/wheelOdomPreintegration.cpp)
 ament_target_dependencies(${PROJECT_NAME}_wheelOdomPreintegration ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_wheelOdomPreintegration Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_wheelOdomPreintegration liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 
 install(
@@ -101,11 +123,21 @@ install(
 )
 
 install(
-  TARGETS 
-	${PROJECT_NAME}_imageProjection
-	${PROJECT_NAME}_imuPreintegration
-  ${PROJECT_NAME}_wheelOdomPreintegration
-	${PROJECT_NAME}_mapOptmization
+  TARGETS
+    liorf_common
+    ${image_projection_library_name}
+    ${map_optimization_library_name}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(
+  TARGETS
+    ${PROJECT_NAME}_imageProjection
+    ${PROJECT_NAME}_mapOptmization
+    ${PROJECT_NAME}_imuPreintegration
+    ${PROJECT_NAME}_wheelOdomPreintegration
   DESTINATION lib/${PROJECT_NAME}
 )
 
