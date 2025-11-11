@@ -5,9 +5,11 @@ import threading
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, IncludeLaunchDescription, GroupAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition, UnlessCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
@@ -20,26 +22,28 @@ from launch.launch_context import LaunchContext
 # Try to import GcpOrLocalParamsFile, fall back to None if not available
 try:
     from python_utils.launch_utils import GcpOrLocalParamsFile, parse_bool2string
+
     GCP_OR_LOCAL_AVAILABLE = True
 except ImportError:
     GcpOrLocalParamsFile = None
     parse_bool2string = lambda x: str(bool(x)).lower()
     GCP_OR_LOCAL_AVAILABLE = False
 
+
 def generate_launch_description():
     share_dir = get_package_share_directory("liorf_localization")
-    
+
     # Launch arguments
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
     use_respawn = LaunchConfiguration("use_respawn")
-    
+
     # Use GcpOrLocalParamsFile if available, otherwise use LaunchConfiguration
     if GCP_OR_LOCAL_AVAILABLE:
         # Use GcpOrLocalParamsFile to handle parameter file loading
         gcp_params = GcpOrLocalParamsFile(
             env_var_name="LIORF_PARAMS_FILE",
-            default_file_path=os.path.join(share_dir, "config", "localization.yaml")
+            default_file_path=os.path.join(share_dir, "config", "localization.yaml"),
         )
         parameter_file = gcp_params.local_file_path
         # Still declare the launch argument for backward compatibility
@@ -56,24 +60,19 @@ def generate_launch_description():
             default_value=os.path.join(share_dir, "config", "localization.yaml"),
             description="Path to the ROS2 parameters file to use.",
         )
-    
+
     rviz_config_file = os.path.join(share_dir, "rviz", "localization.rviz")
     use_rviz = LaunchConfiguration("use_rviz")
-    scale_livox_imu = LaunchConfiguration("scale_livox_imu")
 
     rviz_declare = DeclareLaunchArgument(
-        "use_rviz",
-        default_value="true",
-        description="Whether to launch RViz"
+        "use_rviz", default_value="true", description="Whether to launch RViz"
     )
 
-    # in case your data comes from an unmodified livox wrapper, which outputs acceleration in `g`
-    # set this to true to launch a node to scale times the gravity. if you already have the latest
-    # version, leave it false as the default
-    livox_scale_imu_declare = DeclareLaunchArgument(
-        "scale_livox_imu",
-        default_value="false",
-        description="Whether to scale the livox imu times the gravity"
+    launch_complementary_filter = LaunchConfiguration("launch_complementary_filter")
+    launch_complementary_filter_declare = DeclareLaunchArgument(
+        "launch_complementary_filter",
+        default_value="true",
+        description="Whether to launch the complementary filter",
     )
 
     local_launch = bool(int(os.getenv("LOCAL_LAUNCH", 0)))
@@ -81,7 +80,7 @@ def generate_launch_description():
     respawn_delay = float(os.getenv(key="RESPAWN_DELAY", default=5))
 
     if local_launch:
-        os.environ["LIDAR_LOCALIZATION"] = '1'
+        os.environ["LIDAR_LOCALIZATION"] = "1"
 
     # Composable nodes for ImageProjection and mapOptimization
     composable_liorf_nodes = LoadComposableNodes(
@@ -93,9 +92,9 @@ def generate_launch_description():
                 name="liorf_localization_imageProjection",
                 parameters=[parameter_file],
                 remappings=[
-                    ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+                    ("/odometry/imu_incremental", "/wheel_odometry/global_odometry"),
                 ],
-                extra_arguments=[{'use_intra_process_comms': True}],
+                extra_arguments=[{"use_intra_process_comms": True}],
             ),
             ComposableNode(
                 package="liorf_localization",
@@ -103,9 +102,9 @@ def generate_launch_description():
                 name="liorf_localization_mapOptmization",
                 parameters=[parameter_file],
                 remappings=[
-                    ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+                    ("/odometry/imu_incremental", "/wheel_odometry/global_odometry"),
                 ],
-                extra_arguments=[{'use_intra_process_comms': True}],
+                extra_arguments=[{"use_intra_process_comms": True}],
             ),
         ],
         condition=IfCondition(use_composition),
@@ -121,25 +120,26 @@ def generate_launch_description():
         respawn=respawn_nodes,
         respawn_delay=respawn_delay,
         remappings=[
-            ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+            ("/odometry/imu_incremental", "/wheel_odometry/global_odometry"),
         ],
         condition=UnlessCondition(use_composition),
     )
-    
+
     standalone_map_optimization = Node(
         package="liorf_localization",
         executable="liorf_localization_mapOptmization",
         name="liorf_localization_mapOptmization",
+        # prefix="valgrind --tool=massif",
         parameters=[parameter_file],
         output="screen",
         respawn=respawn_nodes,
         respawn_delay=respawn_delay,
         remappings=[
-            ('/odometry/imu_incremental', '/wheel_odometry/global_odometry'),
+            ("/odometry/imu_incremental", "/wheel_odometry/global_odometry"),
         ],
         condition=UnlessCondition(use_composition),
     )
-    
+
     launch_description = [
         # Launch arguments
         DeclareLaunchArgument(
@@ -149,12 +149,12 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "container_name",
-            default_value="localization_container",
+            default_value="localization_kronos",
             description="Name of the container to load composable nodes into",
         ),
         params_declare,
         rviz_declare,
-        livox_scale_imu_declare,
+        launch_complementary_filter_declare,
         # Composable nodes
         composable_liorf_nodes,
         # Standalone nodes
@@ -171,90 +171,75 @@ def generate_launch_description():
         # ),
     ]
 
-    if_condition = IfCondition(scale_livox_imu)
-    unless_condition = UnlessCondition(scale_livox_imu)
-
-    livox_imu_scaler_node = Node(
-        package="livox_imu_scaler",
-        executable="livox_imu_scaler",
-        name="livox_imu_scaler",
-        parameters=[parameter_file],
-        output="screen",
-        respawn=respawn_nodes,
-        respawn_delay=respawn_delay,
-        condition=if_condition,
-    )
-
-    complementary_filter_w_scaler = Node(
+    imu_complementary_filter = Node(
         package="imu_complementary_filter",
         executable="complementary_filter_node",
         name="complementary_filter_node",
         parameters=[parameter_file],
-        remappings=[
-            ('/imu/data', '/imu/data_livox')
-        ],
+        remappings=[("/imu/data", "/imu/data_livox"), ("/imu/data_raw", "/livox/imu")],
         output="screen",
         respawn=respawn_nodes,
         respawn_delay=respawn_delay,
-        condition=if_condition,
     )
 
-    complementary_filter_wo_scaler = Node(
-        package="imu_complementary_filter",
-        executable="complementary_filter_node",
-        name="complementary_filter_node",
-        parameters=[parameter_file],
-        remappings=[
-            ('/imu/data', '/imu/data_livox'),
-            ('/imu/data_raw', '/livox/imu')
-        ],
-        output="screen",
-        respawn=respawn_nodes,
-        respawn_delay=respawn_delay,
-        condition=unless_condition,
-    )
-
-    launch_description.append(livox_imu_scaler_node)
-    launch_description.append(complementary_filter_w_scaler)
-    launch_description.append(complementary_filter_wo_scaler)
+    launch_description.append(imu_complementary_filter)
 
     if local_launch:
-        launch_description.append(SetEnvironmentVariable('LIDAR_LOCALIZATION', '1'))
-        launch_description.append(Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            arguments=['-d', rviz_config_file],
-            output='screen'
-        ))
-        launch_description.append(Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="static_transform_publisher",
-            arguments=["0.16", "0", "0.6", "0", "0.25", "0", "base_link", "livox_link"],
-            output="screen",
-        ))
-        launch_description.append(Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="static_transform_publisher",
-            arguments=["0", "0", "0", "0", "0", "0", "livox_link", "livox_frame"],
-            output="screen",
-        ))
-        launch_description.append(Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="static_transform_publisher",
-            arguments=["0", "0", "0", "0", "0", "0", "base_link", "gps"],
-            output="screen",
-        ))
-        launch_description.append(Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="static_transform_publisher",
-            arguments=["0", "0", "0", "0", "0", "0", "base_link", "inertial_link"],
-            output="screen",
-        ))
+        launch_description.append(SetEnvironmentVariable("LIDAR_LOCALIZATION", "1"))
+        launch_description.append(
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2",
+                arguments=["-d", rviz_config_file],
+                output="screen",
+            )
+        )
+        launch_description.append(
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="static_transform_publisher",
+                arguments=[
+                    "0.16",
+                    "0",
+                    "0.6",
+                    "0",
+                    "0.25",
+                    "0",
+                    "base_link",
+                    "livox_link",
+                ],
+                output="screen",
+            )
+        )
+        launch_description.append(
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="static_transform_publisher",
+                arguments=["0", "0", "0", "0", "0", "0", "livox_link", "livox_frame"],
+                output="screen",
+            )
+        )
+        launch_description.append(
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="static_transform_publisher",
+                arguments=["0", "0", "0", "0", "0", "0", "base_link", "gps"],
+                output="screen",
+            )
+        )
+        launch_description.append(
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="static_transform_publisher",
+                arguments=["0", "0", "0", "0", "0", "0", "base_link", "inertial_link"],
+                output="screen",
+            )
+        )
         # now you are meant to launch liorf through robot_localization.launch.py
         # launch_description.append(IncludeLaunchDescription(
         #     PythonLaunchDescriptionSource([os.path.join(
