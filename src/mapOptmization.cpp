@@ -628,8 +628,8 @@ public:
         // Simply publish it and add to queue
         if (!useGpsElevation)
         {
-            odomMsg.pose.pose.position.z = transformTobeMapped[5];
-            odomMsg.pose.covariance[14] = 0.01;
+            odomMsg->pose.pose.position.z = transformTobeMapped[5];
+            odomMsg->pose.covariance[14] = 0.01;
         }
         publishPoseWithCovariance(pubGpsPose, odomMsg->pose, odomMsg->header.stamp, mapFrame);
         gpsQueue.push_back(*odomMsg);
