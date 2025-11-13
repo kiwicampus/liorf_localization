@@ -2,14 +2,14 @@
   ros__parameters:
     # Topics
     # ubran honkong
-    pointCloudTopic: "/livox/lidar"               # Point cloud data
+    pointCloudTopic: "/livox/filtered"               # Point cloud data
     imuTopic: "/imu/data_livox"                         # IMU data # <!-- liorf_localization_yjz_lucky_boy -->
 
     # # mulran
     # pointCloudTopic: "/os1_points"               # Point cloud data
     # imuTopic: "/imu/data_raw"                         # IMU data # <!-- liorf_localization_yjz_lucky_boy -->
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
-    gpsTopic: "/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
+    gpsTopic: "/odometry/gps"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
     lidarFrame: "livox_link"
@@ -19,10 +19,11 @@
 
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"
-    useGpsElevation: true                      # if GPS elevation is bad, set to "false"
-    gpsCovThreshold: 0.0001                        # m^2, threshold for using GPS data
+    useGpsElevation: false                      # if GPS elevation is bad, set to "false"
+    gpsCovThreshold: 0.5                        # m^2, threshold for using GPS data
     poseCovThreshold: 0.000000000001                      # m^2, threshold for using GPS data
-    
+    mappingGpsDistanceThreshold: 10.0  # meters, maximum distance from current pose estimate to accept GPS measurement
+
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
     savePCDDirectory: "/data/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
@@ -112,12 +113,10 @@
     globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
     globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
 
-    mappingGpsDatumLatitude: 45.53929754059958
-    mappingGpsDatumLongitude: -122.92470385245429
-    mappingGpsDatumAltitude: 39.0
     mappingGpsCloudTimeOffset: 0.0
     mappingGpsCovariance: 0.01
     mappingGpsAddingDist: 0.3
+    mappingGpsDistanceThreshold: 10.0  # meters, maximum distance from current pose estimate to accept GPS measurement
     
     mappingLmConvergenceTrans: 0.07
     mappingLmConvergenceRot: 0.07

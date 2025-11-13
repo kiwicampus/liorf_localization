@@ -19,8 +19,6 @@
 
 #include <gtsam/nonlinear/ISAM2.h>
 
-#include <GeographicLib/Geocentric.hpp>
-#include <GeographicLib/LocalCartesian.hpp>
 
 #include "initial_pose_interfaces/srv/set_initial_pose.hpp"
 
@@ -67,7 +65,7 @@ public:
     Eigen::MatrixXd poseCovariance;
 
     rclcpp::Subscription<liorf_localization::msg::CloudInfo>::SharedPtr subCloud;
-    rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr subGPS;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subGPS;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr sub_initial_pose;
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubGlobalMap;
@@ -151,7 +149,6 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
-    GeographicLib::LocalCartesian gps_trans_;
 
     // add by yjz_lucky_boy
     // localization
@@ -196,7 +193,7 @@ public:
 
         subCloud = create_subscription<liorf_localization::msg::CloudInfo>("liorf_localization/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
-        subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
+        subGPS = create_subscription<nav_msgs::msg::Odometry>(gpsTopic, QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
         sub_initial_pose = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::initialposeHandler, this, std::placeholders::_1));
@@ -625,40 +622,17 @@ public:
         }
     }
 
-    void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
+    void gpsHandler(const nav_msgs::msg::Odometry::SharedPtr odomMsg)
     {
-        if (gpsMsg->status.status != 0 && gpsMsg->status.status != 2)
-            return;
-
-        Eigen::Vector3d trans_local_;
-        static bool first_gps = false;
-        if (!first_gps) {
-            first_gps = true;
-            if(mappingGpsDatumLatitude != 0.0 || mappingGpsDatumLongitude != 0)
-            {
-                gps_trans_.Reset(mappingGpsDatumLatitude, mappingGpsDatumLongitude, mappingGpsDatumAltitude);
-                std::cout << "First pose saved from Datum: latitude " << mappingGpsDatumLatitude << ", longitude: " << mappingGpsDatumLongitude << std::endl;
-            }
-            else
-            {
-                std::cout << "First pose saved from GPS: latitude " << gpsMsg->latitude << ", longitude: " << gpsMsg->longitude << std::endl;
-                gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
-            }
+        // Odometry message is assumed to be already converted to the map frame
+        // Simply publish it and add to queue
+        if (!useGpsElevation)
+        {
+            odomMsg.pose.pose.position.z = transformTobeMapped[5];
+            odomMsg.pose.covariance[14] = 0.01;
         }
-
-        gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
-
-        nav_msgs::msg::Odometry gps_odom;
-        gps_odom.header = gpsMsg->header;
-        gps_odom.header.frame_id = "map";
-        gps_odom.pose.pose.position.x = trans_local_[0];
-        gps_odom.pose.pose.position.y = trans_local_[1];
-        gps_odom.pose.pose.position.z = trans_local_[2];
-        gps_odom.pose.covariance[0] = gpsMsg->position_covariance[0];
-        gps_odom.pose.covariance[7] = gpsMsg->position_covariance[4];
-        gps_odom.pose.covariance[14] = gpsMsg->position_covariance[8];
-        publishPoseWithCovariance(pubGpsPose, gps_odom.pose, timeLaserInfoStamp, mapFrame);
-        gpsQueue.push_back(gps_odom);
+        publishPoseWithCovariance(pubGpsPose, odomMsg->pose, odomMsg->header.stamp, mapFrame);
+        gpsQueue.push_back(*odomMsg);
     }
 
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
@@ -1347,15 +1321,22 @@ public:
                 float gps_x = thisGPS.pose.pose.position.x;
                 float gps_y = thisGPS.pose.pose.position.y;
                 float gps_z = thisGPS.pose.pose.position.z;
-                if (!useGpsElevation)
-                {
-                    gps_z = transformTobeMapped[5];
-                    noise_z = 0.01;
-                }
 
                 // GPS not properly initialized (0,0,0)
                 if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
                     continue;
+
+                // Check if GPS measurement is too far from current pose estimate (2D distance only, ignore altitude)
+                float dx = gps_x - transformTobeMapped[3];
+                float dy = gps_y - transformTobeMapped[4];
+                float distance = sqrt(dx * dx + dy * dy);
+                if (distance > mappingGpsDistanceThreshold)
+                {
+                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, 
+                        "GPS measurement rejected: too far from current estimate (%.2f m > %.2f m threshold)", 
+                        distance, mappingGpsDistanceThreshold);
+                    continue;
+                }
 
                 // Add GPS every a few meters
                 PointType curGPSPoint;

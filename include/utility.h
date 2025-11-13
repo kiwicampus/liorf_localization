@@ -163,6 +163,7 @@ public:
     float mappingGpsCloudTimeOffset;
     float mappingGpsCovariance;
     float mappingGpsAddingDist;
+    float mappingGpsDistanceThreshold;
     
     float mappingLmConvergenceTrans;
     float mappingLmConvergenceRot;
@@ -343,6 +344,8 @@ public:
         get_parameter("mappingGpsCovariance", mappingGpsCovariance);
         declare_parameter<float>("mappingGpsAddingDist", 1.0f);
         get_parameter("mappingGpsAddingDist", mappingGpsAddingDist);
+        declare_parameter<float>("mappingGpsDistanceThreshold", 10.0f);
+        get_parameter("mappingGpsDistanceThreshold", mappingGpsDistanceThreshold);
         declare_parameter<float>("mappingLmConvergenceTrans", 0.05f);
         get_parameter("mappingLmConvergenceTrans", mappingLmConvergenceTrans);
         declare_parameter<float>("mappingLmConvergenceRot", 0.05f);
