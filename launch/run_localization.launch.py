@@ -68,11 +68,11 @@ def generate_launch_description():
         "use_rviz", default_value="true", description="Whether to launch RViz"
     )
 
-    launch_complementary_filter = LaunchConfiguration("launch_complementary_filter")
-    launch_complementary_filter_declare = DeclareLaunchArgument(
-        "launch_complementary_filter",
-        default_value="true",
-        description="Whether to launch the complementary filter",
+    is_relaunch = LaunchConfiguration("is_relaunch")
+    is_relaunch_declare = DeclareLaunchArgument(
+        "is_relaunch",
+        default_value="false",
+        description="Whether this is a relaunch (used to avoid re-launching non-composable nodes)",
     )
 
     local_launch = bool(int(os.getenv("LOCAL_LAUNCH", 0)))
@@ -154,7 +154,7 @@ def generate_launch_description():
         ),
         params_declare,
         rviz_declare,
-        launch_complementary_filter_declare,
+        is_relaunch_declare,
         # Composable nodes
         composable_liorf_nodes,
         # Standalone nodes
@@ -180,6 +180,7 @@ def generate_launch_description():
         output="screen",
         respawn=respawn_nodes,
         respawn_delay=respawn_delay,
+        condition=UnlessCondition(is_relaunch),
     )
 
     launch_description.append(imu_complementary_filter)
