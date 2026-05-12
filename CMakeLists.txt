@@ -29,7 +29,7 @@ find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PCL REQUIRED)
 find_package(GTSAM REQUIRED)
-find_package(Eigen REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Boost REQUIRED COMPONENTS timer)
 
