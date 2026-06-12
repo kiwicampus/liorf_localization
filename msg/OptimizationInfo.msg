@@ -4,3 +4,8 @@ float32 optimization_delta_r
 float32 optimization_delta_t
 float32 optimization_residuals_rmse
 bool optimization_timed_out
+# Scan-to-map match quality (populated at end of scan2MapOptimization)
+uint32 effective_features
+float32 inlier_ratio
+bool optimization_converged
+bool is_degenerate

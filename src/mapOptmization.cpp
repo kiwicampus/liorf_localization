@@ -526,7 +526,7 @@ public:
 
         if(!has_initialize_pose)
         {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "need initilize pose from rviz.");
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 7000, "need initial pose from /initialpose topic.");
             msgLocalizationInfo.initial_pose_accepted = false;
             publishThrottle<liorf_localization::msg::LocalizationInfo>(pubLocalizationInfo, msgLocalizationInfo, 10.0);
             return false;
@@ -1151,20 +1151,35 @@ public:
         }
         return false; // keep optimizing
     }
+    void updateMatchQualityMetrics(bool optimization_converged)
+    {
+        const uint32_t effective = static_cast<uint32_t>(laserCloudOri->size());
+        msgLocalizationInfo.optimization_info.effective_features = effective;
+        msgLocalizationInfo.optimization_info.inlier_ratio =
+            laserCloudSurfLastDSNum > 0 ? static_cast<float>(effective) / static_cast<float>(laserCloudSurfLastDSNum)
+                                        : 0.0f;
+        msgLocalizationInfo.optimization_info.optimization_converged = optimization_converged;
+        msgLocalizationInfo.optimization_info.is_degenerate = isDegenerate;
+    }
+
     // <!-- liorf_localization_yjz_lucky_boy -->
     bool scan2MapOptimization()
     {
+        msgLocalizationInfo.optimization_info.effective_features = 0;
+        msgLocalizationInfo.optimization_info.inlier_ratio = 0.0f;
+        msgLocalizationInfo.optimization_info.optimization_converged = false;
+        msgLocalizationInfo.optimization_info.is_degenerate = false;
+
         if (cloudKeyPoses3D->points.empty())
             return true;
 
         auto startTime = std::chrono::high_resolution_clock::now();
         auto timeout = std::chrono::milliseconds(mappingProcessingTimeoutMs);
         int iterCount = 0;
+        bool optimization_converged = false;
         msgLocalizationInfo.tracked_features = laserCloudSurfLastDSNum;
         if (laserCloudSurfLastDSNum > 30)
         {
-            
-            // kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
             for (iterCount = 0; iterCount < static_cast<int>(maxNumOptimizationIterations); iterCount++)
             {
                 laserCloudOri->clear();
@@ -1175,22 +1190,33 @@ public:
                 combineOptimizationCoeffs();
 
                 if (LMOptimization(iterCount) == true)
-                    break;              
+                {
+                    optimization_converged = true;
+                    break;
+                }
                 auto currentTime = std::chrono::high_resolution_clock::now();
                 auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
                 if (elapsedTime > timeout)
                 {
-                    RCLCPP_WARN(get_logger(), "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount, static_cast<float>(elapsedTime.count())/iterCount);
+                    RCLCPP_WARN(get_logger(),
+                                "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount,
+                                iterCount > 0 ? static_cast<int>(static_cast<float>(elapsedTime.count()) / iterCount) : 0);
                     msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
+                    updateMatchQualityMetrics(false);
                     return false;
                 }
             }
 
+            updateMatchQualityMetrics(optimization_converged);
+            msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
             transformUpdate();
-        } else {
-            RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
         }
-        msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
+        else
+        {
+            RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
+            updateMatchQualityMetrics(false);
+            msgLocalizationInfo.optimization_info.optimization_iterations = 0;
+        }
         return true;
     }
 
