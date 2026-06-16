@@ -168,6 +168,8 @@ public:
     float mappingLmConvergenceTrans;
     float mappingLmConvergenceRot;
     int mappingProcessingTimeoutMs;
+    float mapFitnessDistanceThreshold;
+    int mapFitnessMaxSamplePoints;
     int maxNumOptimizationIterations;
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
@@ -352,6 +354,10 @@ public:
         get_parameter("mappingLmConvergenceRot", mappingLmConvergenceRot);
         declare_parameter<int>("mappingProcessingTimeoutMs", 200);
         get_parameter("mappingProcessingTimeoutMs", mappingProcessingTimeoutMs);
+        declare_parameter<float>("mapFitnessDistanceThreshold", 0.2f);
+        get_parameter("mapFitnessDistanceThreshold", mapFitnessDistanceThreshold);
+        declare_parameter<int>("mapFitnessMaxSamplePoints", 400);
+        get_parameter("mapFitnessMaxSamplePoints", mapFitnessMaxSamplePoints);
         declare_parameter<int>("maxNumOptimizationIterations", 30);
         get_parameter("maxNumOptimizationIterations", maxNumOptimizationIterations);
 

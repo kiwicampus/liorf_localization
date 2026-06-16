@@ -9,3 +9,7 @@ uint32 effective_features
 float32 inlier_ratio
 bool optimization_converged
 bool is_degenerate
+# Post-optimization scan-to-map fitness (current pose vs GlobalMap kdtree)
+float32 median_map_match_distance
+float32 p90_map_match_distance
+float32 map_fitness_ratio

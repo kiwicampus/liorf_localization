@@ -13,6 +13,7 @@
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <algorithm>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/inference/Symbol.h>
@@ -1162,6 +1163,65 @@ public:
         msgLocalizationInfo.optimization_info.is_degenerate = isDegenerate;
     }
 
+    void updateMapFitnessMetrics()
+    {
+        auto& opt = msgLocalizationInfo.optimization_info;
+        opt.median_map_match_distance = 0.0f;
+        opt.p90_map_match_distance = 0.0f;
+        opt.map_fitness_ratio = 0.0f;
+
+        if (!has_global_map || laserCloudSurfFromMapDSNum == 0 || laserCloudSurfLastDSNum == 0)
+        {
+            return;
+        }
+
+        updatePointAssociateToMap();
+
+        const int max_samples = std::max(1, mapFitnessMaxSamplePoints);
+        const int stride = std::max(1, laserCloudSurfLastDSNum / max_samples);
+        std::vector<float> distances;
+        distances.reserve(static_cast<size_t>(laserCloudSurfLastDSNum / stride) + 1);
+
+        for (int i = 0; i < laserCloudSurfLastDSNum; i += stride)
+        {
+            PointType point_ori = laserCloudSurfLastDS->points[i];
+            PointType point_map;
+            pointAssociateToMap(&point_ori, &point_map);
+
+            std::vector<int> point_search_ind(1);
+            std::vector<float> point_search_sq_dist(1);
+            if (kdtreeSurfFromMap.nearestKSearch(point_map, 1, point_search_ind, point_search_sq_dist) > 0)
+            {
+                distances.push_back(std::sqrt(point_search_sq_dist[0]));
+            }
+        }
+
+        if (distances.empty())
+        {
+            return;
+        }
+
+        const float threshold = mapFitnessDistanceThreshold;
+        int within_threshold = 0;
+        for (const float distance : distances)
+        {
+            if (distance < threshold)
+            {
+                within_threshold++;
+            }
+        }
+        opt.map_fitness_ratio = static_cast<float>(within_threshold) / static_cast<float>(distances.size());
+
+        const size_t median_idx = distances.size() / 2;
+        std::nth_element(distances.begin(), distances.begin() + static_cast<long>(median_idx), distances.end());
+        opt.median_map_match_distance = distances[median_idx];
+
+        const size_t p90_idx =
+            static_cast<size_t>(0.9f * static_cast<float>(distances.size() - 1));
+        std::nth_element(distances.begin(), distances.begin() + static_cast<long>(p90_idx), distances.end());
+        opt.p90_map_match_distance = distances[p90_idx];
+    }
+
     // <!-- liorf_localization_yjz_lucky_boy -->
     bool scan2MapOptimization()
     {
@@ -1169,6 +1229,9 @@ public:
         msgLocalizationInfo.optimization_info.inlier_ratio = 0.0f;
         msgLocalizationInfo.optimization_info.optimization_converged = false;
         msgLocalizationInfo.optimization_info.is_degenerate = false;
+        msgLocalizationInfo.optimization_info.median_map_match_distance = 0.0f;
+        msgLocalizationInfo.optimization_info.p90_map_match_distance = 0.0f;
+        msgLocalizationInfo.optimization_info.map_fitness_ratio = 0.0f;
 
         if (cloudKeyPoses3D->points.empty())
             return true;
@@ -1203,11 +1266,13 @@ public:
                                 iterCount > 0 ? static_cast<int>(static_cast<float>(elapsedTime.count()) / iterCount) : 0);
                     msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
                     updateMatchQualityMetrics(false);
+                    updateMapFitnessMetrics();
                     return false;
                 }
             }
 
             updateMatchQualityMetrics(optimization_converged);
+            updateMapFitnessMetrics();
             msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
             transformUpdate();
         }
@@ -1215,6 +1280,7 @@ public:
         {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
             updateMatchQualityMetrics(false);
+            updateMapFitnessMetrics();
             msgLocalizationInfo.optimization_info.optimization_iterations = 0;
         }
         return true;
