@@ -20,9 +20,8 @@
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"
     useGpsElevation: false                      # if GPS elevation is bad, set to "false"
-    gpsCovThreshold: 0.5                        # m^2, threshold for using GPS data
-    poseCovThreshold: 0.000000000001                      # m^2, threshold for using GPS data
-    mappingGpsDistanceThreshold: 10.0  # meters, maximum distance from current pose estimate to accept GPS measurement
+    poseCovThreshold: 0.1                      # m^2, minimum covariance for accept GPS data
+    gpsCovThreshold: 0.01                        # m^2, minimum covariance to accept GPS measurement
 
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3

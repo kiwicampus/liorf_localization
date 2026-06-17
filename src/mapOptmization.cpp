@@ -1152,20 +1152,46 @@ public:
         }
         return false; // keep optimizing
     }
+    // --- Delocalization telemetry (published in LocalizationInfo.optimization_info) ---
+    //
+    // Two complementary checks:
+    //   1. Match quality — how well the LM optimizer converged this scan (internal).
+    //   2. Map fitness — does the final pose explain the scan against GlobalMap? (external).
+    //
+    // Consumers: localization_monitor_3d plugins, MQTT heartbeat (inlier_ratio, map_fitness_ratio).
+
+    // Optimizer-internal match quality for match_quality_monitor.
+    // Reflects surf feature association + LM state at the end of scan2MapOptimization.
+    // Not the same as map fitness: a scan can converge with few inliers yet still fit the map poorly.
     void updateMatchQualityMetrics(bool optimization_converged)
     {
+        // laserCloudOri is rebuilt each LM iteration in combineOptimizationCoeffs() from
+        // points that passed plane association in surfOptimization().
         const uint32_t effective = static_cast<uint32_t>(laserCloudOri->size());
         msgLocalizationInfo.optimization_info.effective_features = effective;
+
+        // Denominator is the downsampled scan size (same count as available_points).
+        // Low ratio => few surf points found valid map correspondences for the solve.
         msgLocalizationInfo.optimization_info.inlier_ratio =
             laserCloudSurfLastDSNum > 0 ? static_cast<float>(effective) / static_cast<float>(laserCloudSurfLastDSNum)
                                         : 0.0f;
+
+        // True when LMOptimization() returned true (deltaR/deltaT below mappingLmConvergence*).
         msgLocalizationInfo.optimization_info.optimization_converged = optimization_converged;
+
+        // Set inside LMOptimization() when Hessian eigenvalues fall below eignThre (underconstrained geometry).
         msgLocalizationInfo.optimization_info.is_degenerate = isDegenerate;
     }
 
+    // Post-pose scan-to-map fitness for map_fitness_monitor and pose_jump_monitor.
+    //
+    // Unlike surfOptimization (5-NN plane fit for LM constraints), this is a direct geometric check:
+    // transform each subsampled scan point with the current pose and measure 1-NN distance to GlobalMap.
+    // Runs after optimization (or on timeout / too-few-features) so monitors always see the best pose so far.
     void updateMapFitnessMetrics()
     {
         auto& opt = msgLocalizationInfo.optimization_info;
+        // Zero means "not computed"; monitors treat ratio<=0 && median<=0 as skip.
         opt.median_map_match_distance = 0.0f;
         opt.p90_map_match_distance = 0.0f;
         opt.map_fitness_ratio = 0.0f;
@@ -1175,8 +1201,10 @@ public:
             return;
         }
 
+        // Caches transPointAssociateToMap from transformTobeMapped (final or best-so-far pose).
         updatePointAssociateToMap();
 
+        // Cap kdtree queries at mapFitnessMaxSamplePoints (default 400) to bound per-scan CPU cost.
         const int max_samples = std::max(1, mapFitnessMaxSamplePoints);
         const int stride = std::max(1, laserCloudSurfLastDSNum / max_samples);
         std::vector<float> distances;
@@ -1201,6 +1229,8 @@ public:
             return;
         }
 
+        // Fraction of scan points whose nearest map point is within mapFitnessDistanceThreshold (default 0.2 m).
+        // Sustained values < ~0.5 suggest delocalization or major scene change (see map_fitness_monitor defaults).
         const float threshold = mapFitnessDistanceThreshold;
         int within_threshold = 0;
         for (const float distance : distances)
@@ -1212,6 +1242,7 @@ public:
         }
         opt.map_fitness_ratio = static_cast<float>(within_threshold) / static_cast<float>(distances.size());
 
+        // Distribution tails — nth_element gives O(n) partial order, sufficient for median/p90.
         const size_t median_idx = distances.size() / 2;
         std::nth_element(distances.begin(), distances.begin() + static_cast<long>(median_idx), distances.end());
         opt.median_map_match_distance = distances[median_idx];
@@ -1225,6 +1256,7 @@ public:
     // <!-- liorf_localization_yjz_lucky_boy -->
     bool scan2MapOptimization()
     {
+        // Clear match-quality / map-fitness fields before this scan's optimization attempt.
         msgLocalizationInfo.optimization_info.effective_features = 0;
         msgLocalizationInfo.optimization_info.inlier_ratio = 0.0f;
         msgLocalizationInfo.optimization_info.optimization_converged = false;
@@ -1240,7 +1272,7 @@ public:
         auto timeout = std::chrono::milliseconds(mappingProcessingTimeoutMs);
         int iterCount = 0;
         bool optimization_converged = false;
-        msgLocalizationInfo.tracked_features = laserCloudSurfLastDSNum;
+        msgLocalizationInfo.available_points = laserCloudSurfLastDSNum;
         if (laserCloudSurfLastDSNum > 30)
         {
             for (iterCount = 0; iterCount < static_cast<int>(maxNumOptimizationIterations); iterCount++)
@@ -1265,12 +1297,14 @@ public:
                                 "scan2MapOptimization timed out on iteration %i. avg iteration time was %d ms", iterCount,
                                 iterCount > 0 ? static_cast<int>(static_cast<float>(elapsedTime.count()) / iterCount) : 0);
                     msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
+                    // Publish metrics at timeout so match_quality_monitor.fail_on_timeout can react.
                     updateMatchQualityMetrics(false);
                     updateMapFitnessMetrics();
                     return false;
                 }
             }
 
+            // Metrics reflect final LM iteration (converged or hit maxNumOptimizationIterations).
             updateMatchQualityMetrics(optimization_converged);
             updateMapFitnessMetrics();
             msgLocalizationInfo.optimization_info.optimization_iterations = iterCount;
@@ -1279,6 +1313,7 @@ public:
         else
         {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
+            // Still publish fitness at current pose so monitors see the failure mode.
             updateMatchQualityMetrics(false);
             updateMapFitnessMetrics();
             msgLocalizationInfo.optimization_info.optimization_iterations = 0;
