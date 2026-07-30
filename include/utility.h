@@ -1,89 +1,96 @@
 #pragma once
 #ifndef _UTILITY_LIDAR_ODOMETRY_H_
 #define _UTILITY_LIDAR_ODOMETRY_H_
-#define PCL_NO_PRECOMPILE 
+#define PCL_NO_PRECOMPILE
 
 // <!-- liorf_yjz_lucky_boy -->
 #include <rclcpp/rclcpp.hpp>
 #include "rclcpp_action/rclcpp_action.hpp"
 
-#include <std_msgs/msg/header.hpp>
 #include <common_lib.h>
-#include <std_msgs/msg/string.hpp>
-#include <std_msgs/msg/float32.hpp>
-#include <std_msgs/msg/float64_multi_array.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
-#include <nav_msgs/msg/odometry.hpp>
-#include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_msgs/msg/float32.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/header.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/search/impl/search.hpp>
-#include <pcl/range_image/range_image.h>
-#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
-#include <pcl/registration/icp.h>
-#include <pcl/io/pcd_io.h>
+#include <pcl/filters/crop_box.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/crop_box.h> 
+#include <pcl/io/pcd_io.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/range_image/range_image.h>
+#include <pcl/registration/icp.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/search/impl/search.hpp>
 
 #include <tf2/LinearMath/Quaternion.h>
-#include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
- 
+
 #include <opencv2/opencv.hpp>
- 
-#include <vector>
-#include <cmath>
+
 #include <algorithm>
-#include <queue>
-#include <deque>
-#include <iostream>
-#include <fstream>
-#include <ctime>
+#include <array>
 #include <cfloat>
+#include <cmath>
+#include <ctime>
+#include <deque>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <iterator>
+#include <limits>
+#include <mutex>
+#include <queue>
 #include <sstream>
 #include <string>
-#include <limits>
-#include <iomanip>
-#include <array>
 #include <thread>
-#include <mutex>
+#include <vector>
 
 using namespace std;
 
 typedef pcl::PointXYZI PointType;
 
 // <!-- liorf_localization_yjz_lucky_boy -->
-std::shared_ptr<CommonLib::common_lib> common_lib_;
+inline std::shared_ptr<CommonLib::common_lib> common_lib_;
 
-enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN};
+enum class SensorType
+{
+    VELODYNE,
+    OUSTER,
+    LIVOX,
+    ROBOSENSE,
+    MULRAN
+};
 
 class ParamServer : public rclcpp::Node
 {
-public:
+   public:
     string history_policy;
     string reliability_policy;
 
-    //Topics
+    // Topics
     string pointCloudTopic;
     string imuTopic;
     string odomTopic;
     string gpsTopic;
 
-    //Frames
+    // Frames
     string lidarFrame;
     string baselinkFrame;
     string odometryFrame;
@@ -126,11 +133,11 @@ public:
     Eigen::Quaterniond extQRPY;
 
     // voxel filter paprams
-    float mappingSurfLeafSize ;
+    float mappingSurfLeafSize;
     float surroundingKeyframeMapLeafSize;
-    float loopClosureICPSurfLeafSize ;
+    float loopClosureICPSurfLeafSize;
 
-    float z_tollerance; 
+    float z_tollerance;
     float rotation_tollerance;
 
     // CPU Params
@@ -138,18 +145,18 @@ public:
     double mappingProcessInterval;
 
     // Surrounding map
-    float surroundingkeyframeAddingDistThreshold; 
-    float surroundingkeyframeAddingAngleThreshold; 
+    float surroundingkeyframeAddingDistThreshold;
+    float surroundingkeyframeAddingAngleThreshold;
     float surroundingKeyframeDensity;
     float surroundingKeyframeSearchRadius;
-    
+
     // Loop closure
-    bool  loopClosureEnableFlag;
+    bool loopClosureEnableFlag;
     float loopClosureFrequency;
-    int   surroundingKeyframeSize;
+    int surroundingKeyframeSize;
     float historyKeyframeSearchRadius;
     float historyKeyframeSearchTimeDiff;
-    int   historyKeyframeSearchNum;
+    int historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
 
     // global map visualization radius
@@ -164,13 +171,15 @@ public:
     float mappingGpsCovariance;
     float mappingGpsAddingDist;
     float mappingGpsDistanceThreshold;
-    
+
     float mappingLmConvergenceTrans;
     float mappingLmConvergenceRot;
     int mappingProcessingTimeoutMs;
+    float mapFitnessDistanceThreshold;
+    int mapFitnessMaxSamplePoints;
     int maxNumOptimizationIterations;
 
-    ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
+    ParamServer(std::string node_name, const rclcpp::NodeOptions& options) : Node(node_name, options)
     {
         declare_parameter<string>("history_policy", "history_keep_last");
         get_parameter("history_policy", history_policy);
@@ -223,17 +232,21 @@ public:
         else if (sensorStr == "livox")
         {
             sensor = SensorType::LIVOX;
-        } else if  (sensorStr == "robosense") {
+        }
+        else if (sensorStr == "robosense")
+        {
             sensor = SensorType::ROBOSENSE;
         }
         else if (sensorStr == "mulran")
         {
             sensor = SensorType::MULRAN;
-        } 
-        else {
+        }
+        else
+        {
             RCLCPP_ERROR_STREAM(
                 get_logger(),
-                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox' or 'robosense' or 'mulran'): " << sensorStr);
+                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox' or 'robosense' or 'mulran'): "
+                    << sensorStr);
             rclcpp::shutdown();
         }
 
@@ -267,16 +280,14 @@ public:
         declare_parameter<float>("imuRPYWeight", 0.01f);
         get_parameter("imuRPYWeight", imuRPYWeight);
 
-        double ida[] = { 1.0,  0.0,  0.0,
-                         0.0,  1.0,  0.0,
-                         0.0,  0.0,  1.0};
-        std::vector < double > id(ida, std::end(ida));
+        double ida[] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+        std::vector<double> id(ida, std::end(ida));
         declare_parameter("extrinsicRot", id);
         get_parameter("extrinsicRot", extRotV);
         declare_parameter("extrinsicRPY", id);
         get_parameter("extrinsicRPY", extRPYV);
         double zea[] = {0.0, 0.0, 0.0};
-        std::vector < double > ze(zea, std::end(zea));
+        std::vector<double> ze(zea, std::end(zea));
         declare_parameter("extrinsicTrans", ze);
         get_parameter("extrinsicTrans", extTransV);
 
@@ -352,6 +363,10 @@ public:
         get_parameter("mappingLmConvergenceRot", mappingLmConvergenceRot);
         declare_parameter<int>("mappingProcessingTimeoutMs", 200);
         get_parameter("mappingProcessingTimeoutMs", mappingProcessingTimeoutMs);
+        declare_parameter<float>("mapFitnessDistanceThreshold", 0.2f);
+        get_parameter("mapFitnessDistanceThreshold", mapFitnessDistanceThreshold);
+        declare_parameter<int>("mapFitnessMaxSamplePoints", 400);
+        get_parameter("mapFitnessMaxSamplePoints", mapFitnessMaxSamplePoints);
         declare_parameter<int>("maxNumOptimizationIterations", 30);
         get_parameter("maxNumOptimizationIterations", maxNumOptimizationIterations);
 
@@ -374,16 +389,19 @@ public:
         imu_out.angular_velocity.y = gyr.y();
         imu_out.angular_velocity.z = gyr.z();
 
-        if (imuType) {
+        if (imuType)
+        {
             // rotate roll pitch yaw
-            Eigen::Quaterniond q_from(imu_in.orientation.w, imu_in.orientation.x, imu_in.orientation.y, imu_in.orientation.z);
+            Eigen::Quaterniond q_from(imu_in.orientation.w, imu_in.orientation.x, imu_in.orientation.y,
+                                      imu_in.orientation.z);
             Eigen::Quaterniond q_final = q_from * extQRPY;
             imu_out.orientation.x = q_final.x();
             imu_out.orientation.y = q_final.y();
             imu_out.orientation.z = q_final.z();
             imu_out.orientation.w = q_final.w();
 
-            if (sqrt(q_final.x()*q_final.x() + q_final.y()*q_final.y() + q_final.z()*q_final.z() + q_final.w()*q_final.w()) < 0.1)
+            if (sqrt(q_final.x() * q_final.x() + q_final.y() * q_final.y() + q_final.z() * q_final.z() +
+                     q_final.w() * q_final.w()) < 0.1)
             {
                 RCLCPP_ERROR(get_logger(), "Invalid quaternion, please use a 9-axis IMU!");
                 rclcpp::shutdown();
@@ -394,93 +412,107 @@ public:
     }
 };
 
-template<typename T>
-sensor_msgs::msg::PointCloud2 publishCloud(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &thisPub, const T& thisCloud, rclcpp::Time thisStamp, std::string thisFrame, bool check_for_subscribers = true)
+template <typename T>
+sensor_msgs::msg::PointCloud2 publishCloud(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr& thisPub,
+                                           const T& thisCloud, rclcpp::Time thisStamp, std::string thisFrame,
+                                           bool check_for_subscribers = true)
 {
     sensor_msgs::msg::PointCloud2 tempCloud;
     pcl::toROSMsg(*thisCloud, tempCloud);
     tempCloud.header.stamp = thisStamp;
     tempCloud.header.frame_id = thisFrame;
-    if (thisPub->get_subscription_count() != 0 || !check_for_subscribers)
-        thisPub->publish(tempCloud);
+    if (thisPub->get_subscription_count() != 0 || !check_for_subscribers) thisPub->publish(tempCloud);
 
     return tempCloud;
 }
 
-template<typename T>
-struct always_false : std::false_type {};
+template <typename T>
+struct always_false : std::false_type
+{
+};
 
-template<typename T>
-void publishPoseWithCovariance(const rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr &thisPub, const T& thisPose, rclcpp::Time thisStamp, std::string thisFrame)
+template <typename T>
+void publishPoseWithCovariance(
+    const rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr& thisPub, const T& thisPose,
+    rclcpp::Time thisStamp, std::string thisFrame)
 {
     geometry_msgs::msg::PoseWithCovarianceStamped tempPose;
 
-    if constexpr (std::is_same<T, geometry_msgs::msg::Pose>::value) {
+    if constexpr (std::is_same<T, geometry_msgs::msg::Pose>::value)
+    {
         tempPose.pose.pose = thisPose;
-    } else if constexpr (std::is_same<T, geometry_msgs::msg::PoseWithCovariance>::value) {
+    }
+    else if constexpr (std::is_same<T, geometry_msgs::msg::PoseWithCovariance>::value)
+    {
         tempPose.pose = thisPose;
-    } else {
+    }
+    else
+    {
         static_assert(always_false<T>::value, "Unsupported type for thisPose. Must be Pose or PoseWithCovariance.");
     }
 
     tempPose.header.stamp = thisStamp;
     tempPose.header.frame_id = thisFrame;
 
-    if (thisPub->get_subscription_count() != 0)
-        thisPub->publish(tempPose);
-
+    if (thisPub->get_subscription_count() != 0) thisPub->publish(tempPose);
 }
 
-template<typename T>
+template <typename T>
 double ROS_TIME(T msg)
 {
     return rclcpp::Time(msg).seconds();
 }
 
-template<typename T>
-void imuAngular2rosAngular(sensor_msgs::msg::Imu *thisImuMsg, T *angular_x, T *angular_y, T *angular_z)
+template <typename T>
+void imuAngular2rosAngular(sensor_msgs::msg::Imu* thisImuMsg, T* angular_x, T* angular_y, T* angular_z)
 {
     *angular_x = thisImuMsg->angular_velocity.x;
     *angular_y = thisImuMsg->angular_velocity.y;
     *angular_z = thisImuMsg->angular_velocity.z;
 }
 
-
-template<typename T>
-void imuAccel2rosAccel(sensor_msgs::msg::Imu *thisImuMsg, T *acc_x, T *acc_y, T *acc_z)
+template <typename T>
+void imuAccel2rosAccel(sensor_msgs::msg::Imu* thisImuMsg, T* acc_x, T* acc_y, T* acc_z)
 {
     *acc_x = thisImuMsg->linear_acceleration.x;
     *acc_y = thisImuMsg->linear_acceleration.y;
     *acc_z = thisImuMsg->linear_acceleration.z;
 }
 
-std::array<double, 36> matrixToArray(const Eigen::MatrixXd& matrix, double max_translation_covariance, double max_rotation_covariance)
+inline std::array<double, 36> matrixToArray(const Eigen::MatrixXd& matrix, double max_translation_covariance,
+                                            double max_rotation_covariance)
 {
     std::array<double, 36> array = {0.0};
 
     // Ensure the input matrix is 6x6
-    if (matrix.rows() == 6 && matrix.cols() == 6) {
-        for (size_t i = 0; i < 6; ++i) {
+    if (matrix.rows() == 6 && matrix.cols() == 6)
+    {
+        for (size_t i = 0; i < 6; ++i)
+        {
             double value = matrix(i, i);
-            value = std::abs(value); // Ensure non-negative values
-            if (i < 3) {
+            value = std::abs(value);  // Ensure non-negative values
+            if (i < 3)
+            {
                 // Translation covariance
                 array[i * 6 + i] = std::min(value, max_translation_covariance);
-            } else {
+            }
+            else
+            {
                 // Rotation covariance
                 array[i * 6 + i] = std::min(value, max_rotation_covariance);
             }
         }
-    } else {
+    }
+    else
+    {
         throw std::runtime_error("Input matrix is not 6x6");
     }
 
     return array;
 }
 
-
-template<typename T>
-void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)
+template <typename T>
+void imuRPY2rosRPY(sensor_msgs::msg::Imu* thisImuMsg, T* rosRoll, T* rosPitch, T* rosYaw)
 {
     double imuRoll, imuPitch, imuYaw;
     tf2::Quaternion orientation;
@@ -492,7 +524,7 @@ void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T
     *rosYaw = imuYaw;
 }
 
-rclcpp::QoS QosPolicy(const string &history_policy, const string &reliability_policy)
+inline rclcpp::QoS QosPolicy(const string& history_policy, const string& reliability_policy)
 {
     rmw_qos_profile_t qos_profile;
     if (history_policy == "history_keep_last")

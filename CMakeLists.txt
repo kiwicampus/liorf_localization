@@ -1,5 +1,33 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(liorf_localization)
+
+# GTSAM on this image was built against Eigen 3.3.x (config.h:
+# GTSAM_EIGEN_VERSION_WORLD=3, _MAJOR=3), but this image's system Eigen3 —
+# what every other package's find_package(Eigen3) resolves to — is 3.4.0.
+# Without a matching Eigen, GTSAM's own static_assert in gtsam/base/Vector.h
+# ("GTSAM was built against a different version of Eigen") fails the compile.
+# This must be set before ANY find_package() call below: PCL's own
+# find_package(PCL REQUIRED) internally resolves and caches Eigen3 first, so
+# setting this any later has no effect (CMake reuses the cached result).
+# ENV{Eigen3_ROOT} (not the plain CMake variable) is used because the
+# CMake-variable form of <Package>_ROOT requires policy CMP0074, which this
+# file doesn't opt into (cmake_minimum_required predates it); the
+# environment-variable form works regardless of that policy. This is scoped
+# to this package's own CMake configure only — it has no effect on any other
+# package's build even within the same colcon batch. Eigen 3.4 documents
+# itself as a safe, ABI-preserving upgrade from 3.3 for standard dense
+# matrix/vector usage (no exotic SIMD-width-dependent layouts are used here),
+# so compiling this package against 3.3.9 instead of 3.4.0 is expected to be
+# safe in practice.
+set(ENV{Eigen3_ROOT} /opt/eigen-3.3.9)
+
+# Silence upstream "CMake Warning (dev)" noise from PCL/GTSAM/OpenCV config
+# files so real build errors aren't buried in push logs. This only hides the
+# messages (equivalent to -Wno-dev); it does NOT change policy behavior, since
+# e.g. forcing CMP0146 to NEW breaks OpenCVConfig.cmake's find_package(CUDA)
+# on this CUDA 11.4 install (no CUDAConfig.cmake shipped, only the legacy
+# FindCUDA.cmake module that NEW policy behavior stops using).
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_STANDARD 17)
@@ -33,8 +61,11 @@ find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Boost REQUIRED COMPONENTS timer)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/usr/share/cmake/geographiclib/")
-find_package(GeographicLib REQUIRED)
+# Kronos/GTSAM ships INTERFACE_COMPILE_OPTIONS "-march=native", which breaks
+# Balena aarch64 builders (and is wrong for Jetson deploy targets anyway).
+if(TARGET gtsam)
+  set_property(TARGET gtsam PROPERTY INTERFACE_COMPILE_OPTIONS "")
+endif()
 
 set(ros2_lib "rclcpp;rclcpp_components;rclpy;std_msgs;sensor_msgs;geometry_msgs;cv_bridge;nav_msgs;pcl_msgs;pcl_conversions;visualization_msgs;tf2;tf2_ros;tf2_eigen;tf2_sensor_msgs;tf2_geometry_msgs;initial_pose_interfaces")
 
@@ -55,7 +86,6 @@ include_directories(
 	${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
-  ${GeographicLib_LIBRARIES}
 )
 
 # link directories
@@ -65,7 +95,6 @@ link_directories(
 	${PCL_LIBRARY_DIRS}
   ${OpenCV_LIBRARY_DIRS}
   ${GTSAM_LIBRARY_DIRS}
-  ${GeographicLib_LIBRARIES}
 )
 
 file(GLOB common_lib "lib/*.cpp")
@@ -95,16 +124,19 @@ target_link_libraries(${PROJECT_NAME}_imageProjection liorf_common "${cpp_typesu
 # Map Optimization Component Library
 set(map_optimization_library_name liorf_localization_mapOptmization_core)
 add_library(${map_optimization_library_name} SHARED src/mapOptmization.cpp)
-target_compile_options(${map_optimization_library_name} PRIVATE ${OpenMP_CXX_FLAGS})
 ament_target_dependencies(${map_optimization_library_name} ${ros2_lib})
-target_link_libraries(${map_optimization_library_name} liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${map_optimization_library_name} liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX gtsam)
 rclcpp_components_register_nodes(${map_optimization_library_name} "mapOptimization")
 
 # Map Optimization Standalone Executable
-add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp)
-target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
+#
+# Links against the component library above instead of recompiling the class
+# from source: previously this executable and the library each independently
+# compiled the entire (unsplit) mapOptmization.cpp, doubling the heaviest
+# compile in the package for no benefit since both produced identical code.
+add_executable(${PROJECT_NAME}_mapOptmization src/mapOptimizationNode.cpp)
 ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization ${map_optimization_library_name} liorf_common Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} OpenMP::OpenMP_CXX gtsam)
 
 # IMU Preintegration - Regular Executable (not a component)
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp)

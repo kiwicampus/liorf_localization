@@ -121,6 +121,8 @@
     mappingLmConvergenceTrans: 0.07
     mappingLmConvergenceRot: 0.07
     mappingProcessingTimeoutMs: 200
+    mapFitnessDistanceThreshold: 0.2   # meters; fraction of scan points within this distance to GlobalMap
+    mapFitnessMaxSamplePoints: 400     # subsample scan for fitness (CPU)
     maxNumOptimizationIterations: 24
     
     # ICP initialization parameters
