@@ -19,15 +19,7 @@ from launch.event_handlers.on_process_start import OnProcessStart
 from launch.actions import RegisterEventHandler
 from launch.launch_context import LaunchContext
 
-# Try to import GcpOrLocalParamsFile, fall back to None if not available
-try:
-    from python_utils.launch_utils import GcpOrLocalParamsFile, parse_bool2string
-
-    GCP_OR_LOCAL_AVAILABLE = True
-except ImportError:
-    GcpOrLocalParamsFile = None
-    parse_bool2string = lambda x: str(bool(x)).lower()
-    GCP_OR_LOCAL_AVAILABLE = False
+from python_utils.launch_utils import GcpOrLocalParamsFile
 
 
 def generate_launch_description():
@@ -38,28 +30,19 @@ def generate_launch_description():
     container_name = LaunchConfiguration("container_name")
     use_respawn = LaunchConfiguration("use_respawn")
 
-    # Use GcpOrLocalParamsFile if available, otherwise use LaunchConfiguration
-    if GCP_OR_LOCAL_AVAILABLE:
-        # Use GcpOrLocalParamsFile to handle parameter file loading
-        gcp_params = GcpOrLocalParamsFile(
-            env_var_name="LIORF_PARAMS_FILE",
-            default_file_path=os.path.join(share_dir, "config", "localization.yaml"),
-        )
-        parameter_file = gcp_params.local_file_path
-        # Still declare the launch argument for backward compatibility
-        params_declare = DeclareLaunchArgument(
-            "liorf_params_file",
-            default_value=parameter_file,
-            description="Path to the ROS2 parameters file to use.",
-        )
-    else:
-        # Fall back to original LaunchConfiguration approach
-        parameter_file = LaunchConfiguration("liorf_params_file")
-        params_declare = DeclareLaunchArgument(
-            "liorf_params_file",
-            default_value=os.path.join(share_dir, "config", "localization.yaml"),
-            description="Path to the ROS2 parameters file to use.",
-        )
+    # LIORF_PARAMS_FILE is a local path, a gs:// object or empty (the package default). Per-map
+    # overrides (e.g. lidarMaxRange) go here, not in the package config.
+    gcp_params = GcpOrLocalParamsFile(
+        env_var_name="LIORF_PARAMS_FILE",
+        default_file_path=os.path.join(share_dir, "config", "localization.yaml"),
+    )
+    parameter_file = gcp_params.local_file_path
+    # Still declare the launch argument for backward compatibility
+    params_declare = DeclareLaunchArgument(
+        "liorf_params_file",
+        default_value=parameter_file,
+        description="Path to the ROS2 parameters file to use.",
+    )
 
     rviz_config_file = os.path.join(share_dir, "rviz", "localization.rviz")
     use_rviz = LaunchConfiguration("use_rviz")
@@ -104,7 +87,11 @@ def generate_launch_description():
                 remappings=[
                     ("/odometry/imu_incremental", "/wheel_odometry/global_odometry"),
                 ],
-                extra_arguments=[{"use_intra_process_comms": True}],
+                # Humble: with node-level intra-process on, the tf2_ros::TransformListener of this node
+                # creates its transient-local /tf_static subscription as intra-process and the
+                # constructor throws ("intraprocess communication allowed only with volatile
+                # durability"). The large map clouds still opt in per publisher/subscription.
+                extra_arguments=[{"use_intra_process_comms": False}],
             ),
         ],
         condition=IfCondition(use_composition),

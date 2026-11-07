@@ -48,6 +48,8 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
+  <!-- run_localization.launch.py -->
+  <exec_depend>python_utils</exec_depend>
   <exec_depend>initial_pose_interfaces</exec_depend>
   <exec_depend>pcl_msgs</exec_depend>
   <exec_depend>tf2_geometry_msgs</exec_depend>
