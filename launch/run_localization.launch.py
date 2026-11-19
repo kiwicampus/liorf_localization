@@ -162,7 +162,13 @@ def generate_launch_description():
         package="imu_complementary_filter",
         executable="complementary_filter_node",
         name="complementary_filter_node",
-        parameters=[parameter_file],
+        parameters=[
+            parameter_file,
+            # The filter's default gyro bias estimation takes a steady turn for bias and subtracts it: on a
+            # smooth 360 degree turn (~12 deg/s) its yaw advanced 14 degrees instead of 360, so the map EKF
+            # (which ignores LIORF's yaw while it changes) lost the heading until the turn ended.
+            {"do_bias_estimation": False},
+        ],
         remappings=[("/imu/data", "/imu/data_livox"), ("/imu/data_raw", "/livox/imu")],
         output="screen",
         respawn=respawn_nodes,
