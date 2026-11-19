@@ -1740,6 +1740,9 @@ public:
         {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
+            // cloud_deskewed is in livox_link and transformTobeMapped is the base_link pose: move the cloud to
+            // base_link first, as the matching does (adjustForRotation), or a lidar mount rotates it
+            pcl::transformPointCloud(*cloudOut, *cloudOut, livox_to_base_link_);
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
             *cloudOut = *transformPointCloud(cloudOut,  &thisPose6D);
             publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, mapFrame);
