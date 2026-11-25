@@ -95,7 +95,7 @@
 
     # CPU Params
     numberOfCores: 8                              # number of cores for mapping optimization
-    mappingProcessInterval: 0.2                  # seconds, regulate mapping frequency
+    mappingProcessInterval: 0.15                 # seconds; under 0.2 so 10 Hz scans (0.1 s apart) give 5 Hz, not 3.3
 
     # Surrounding map
     surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
